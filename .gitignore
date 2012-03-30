@@ -2,7 +2,6 @@
 *.log
 *.o
 *.so
-*.jar
 *.rbc
 doc
 log
