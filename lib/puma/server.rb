@@ -58,6 +58,8 @@ module Puma
       @persistent_timeout = PERSISTENT_TIMEOUT
       @persistent_check, @persistent_wakeup = IO.pipe
 
+      @unix_paths = []
+
       @proto_env = {
         "rack.version".freeze => Rack::VERSION,
         "rack.errors".freeze => events.stderr,
@@ -125,8 +127,18 @@ module Puma
 
     # Tell the server to listen on +path+ as a UNIX domain socket.
     #
-    def add_unix_listener(path)
-      @ios << UNIXServer.new(path)
+    def add_unix_listener(path, umask=nil)
+      @unix_paths << path
+
+      # Let anyone connect by default
+      umask ||= 0
+
+      begin
+        old_mask = File.umask(umask)
+        @ios << UNIXServer.new(path)
+      ensure
+        File.umask old_mask
+      end
     end
 
     def backlog
@@ -180,6 +192,7 @@ module Puma
           graceful_shutdown if @status == :stop
         ensure
           @ios.each { |i| i.close }
+          @unix_paths.each { |i| File.unlink i }
         end
       end
 
