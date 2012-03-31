@@ -32,12 +32,16 @@ module Puma
     # +events+ is an object which will be called when certain error events occur
     # to be handled. See Puma::Events for the list of current methods to implement.
     #
+    # +hooks+ is an object which will be called during lifecycle of request.
+    # currently expects before_call, after_call, after_reply methods (before and after app call, and after the connection has closed)
+    #
     # Server#run returns a thread that you can join on to wait for the server
     # to do it's work.
     #
-    def initialize(app, events=Events::DEFAULT)
+    def initialize(app, events=Events::DEFAULT, hooks=nil)
       @app = app
       @events = events
+      @hooks = hooks
 
       @check, @notify = IO.pipe
       @ios = [@check]
@@ -354,7 +358,12 @@ module Puma
 
       begin
         begin
+          
+          @hooks.before_call(client, env) if @hooks
+          
           status, headers, res_body = @app.call(env)
+          
+          @hooks.after_call(client, env) if @hooks
 
           if status == -1
             unless headers.empty? and res_body == []
@@ -487,6 +496,7 @@ module Puma
         res_body.close if res_body.respond_to? :close
 
         after_reply.each { |o| o.call }
+        @hooks.after_reply(client, env) if @hooks
       end
 
       return keep_alive
