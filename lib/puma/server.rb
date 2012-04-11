@@ -67,12 +67,19 @@ module Puma
         "rack.multiprocess".freeze => false,
         "rack.run_once".freeze => true,
         "SCRIPT_NAME".freeze => "",
-        "CONTENT_TYPE".freeze => "",
+
+        # Rack blows up if this is an empty string, and Rack::Lint
+        # blows up if it's nil. So 'text/plain' seems like the most
+        # sensible default value.
+        "CONTENT_TYPE".freeze => "text/plain",
+
         "QUERY_STRING".freeze => "",
         SERVER_PROTOCOL => HTTP_11,
         SERVER_SOFTWARE => PUMA_VERSION,
         GATEWAY_INTERFACE => CGI_VER
       }
+
+      @envs = {}
 
       ENV['RACK_ENV'] ||= "development"
     end
@@ -111,8 +118,16 @@ module Puma
       if optimize_for_latency
         s.setsockopt(Socket::IPPROTO_TCP, Socket::TCP_NODELAY, 1)
       end
+      s.setsockopt(Socket::SOL_SOCKET,Socket::SO_REUSEADDR, true)
       s.listen backlog
       @ios << s
+      s
+    end
+
+    def inherit_tcp_listener(host, port, fd)
+      s = TCPServer.for_fd(fd)
+      @ios << s
+      s
     end
 
     def add_ssl_listener(host, port, ctx, optimize_for_latency=true, backlog=1024)
@@ -120,9 +135,21 @@ module Puma
       if optimize_for_latency
         s.setsockopt(Socket::IPPROTO_TCP, Socket::TCP_NODELAY, 1)
       end
+      s.setsockopt(Socket::SOL_SOCKET,Socket::SO_REUSEADDR, true)
       s.listen backlog
-      @proto_env[HTTPS_KEY] = HTTPS
+
+      env = @proto_env.dup
+      env[HTTPS_KEY] = HTTPS
+      @envs[s] = env
+
       @ios << OpenSSL::SSL::SSLServer.new(s, ctx)
+      s
+    end
+
+    def inherited_ssl_listener(fd, ctx)
+      s = TCPServer.for_fd(fd)
+      @ios << OpenSSL::SSL::SSLServer.new(s, ctx)
+      s
     end
 
     # Tell the server to listen on +path+ as a UNIX domain socket.
@@ -135,10 +162,22 @@ module Puma
 
       begin
         old_mask = File.umask(umask)
-        @ios << UNIXServer.new(path)
+        s = UNIXServer.new(path)
+        @ios << s
       ensure
         File.umask old_mask
       end
+
+      s
+    end
+
+    def inherit_unix_listener(path, fd)
+      @unix_paths << path
+
+      s = UNIXServer.for_fd fd
+      @ios << s
+
+      s
     end
 
     def backlog
@@ -157,8 +196,8 @@ module Puma
 
       @status = :run
 
-      @thread_pool = ThreadPool.new(@min_threads, @max_threads) do |client|
-        process_client(client)
+      @thread_pool = ThreadPool.new(@min_threads, @max_threads) do |client, env|
+        process_client(client, env)
       end
 
       if @auto_trim_time
@@ -178,7 +217,7 @@ module Puma
                 if sock == check
                   break if handle_check
                 else
-                  pool << sock.accept
+                  pool << [sock.accept, @envs.fetch(sock, @proto_env)]
                 end
               end
             rescue Errno::ECONNABORTED
@@ -191,8 +230,10 @@ module Puma
 
           graceful_shutdown if @status == :stop
         ensure
-          @ios.each { |i| i.close }
-          @unix_paths.each { |i| File.unlink i }
+          unless @status == :restart
+            @ios.each { |i| i.close }
+            @unix_paths.each { |i| File.unlink i }
+          end
         end
       end
 
@@ -210,6 +251,9 @@ module Puma
       when HALT_COMMAND
         @status = :halt
         return true
+      when RESTART_COMMAND
+        @status = :restart
+        return true
       end
 
       return false
@@ -221,7 +265,7 @@ module Puma
     # indicates that it supports keep alive, wait for another request before
     # returning.
     #
-    def process_client(client)
+    def process_client(client, proto_env)
       parser = HttpParser.new
       close_socket = true
 
@@ -229,7 +273,7 @@ module Puma
         while true
           parser.reset
 
-          env = @proto_env.dup
+          env = proto_env.dup
           data = client.readpartial(CHUNK_SIZE)
           nparsed = 0
 
@@ -290,7 +334,7 @@ module Puma
 
       # Server error
       rescue StandardError => e
-        @events.unknown_error self, env, e, "Read"
+        @events.unknown_error self, e, "Read"
 
       ensure
         begin
@@ -298,7 +342,7 @@ module Puma
         rescue IOError, SystemCallError
           # Already closed
         rescue StandardError => e
-          @events.unknown_error self, env, e, "Client"
+          @events.unknown_error self, e, "Client"
         end
       end
     end
@@ -570,7 +614,7 @@ module Puma
     # A fallback rack response if +@app+ raises as exception.
     #
     def lowlevel_error(e)
-      [500, {}, ["No application configured"]]
+      [500, {}, ["Puma caught this error:\n#{e.backtrace.join("\n")}"]]
     end
 
     # Wait for all outstanding requests to finish.
@@ -594,6 +638,11 @@ module Puma
       @notify << HALT_COMMAND
 
       @thread.join if @thread && sync
+    end
+
+    def begin_restart
+      @persistent_wakeup.close
+      @notify << RESTART_COMMAND
     end
   end
 end
