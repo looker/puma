@@ -232,8 +232,12 @@ module Puma
           graceful_shutdown if @status == :stop
         ensure
           unless @status == :restart
-            @ios.each { |i| i.close }
-            @unix_paths.each { |i| File.unlink i }
+            begin
+              @ios.each { |i| i.close }
+              @unix_paths.each { |i| File.unlink i }
+            rescue
+              # These closes may result in errors, we don't need those errors logged
+            end
           end
         end
       end
