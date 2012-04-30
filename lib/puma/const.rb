@@ -25,6 +25,8 @@ module Puma
   # too taxing on performance.
   module Const
 
+    PUMA_VERSION = VERSION = "1.2.2".freeze
+
     # The default number of seconds for another request within a persistent
     # session.
     PERSISTENT_TIMEOUT = 20
@@ -38,8 +40,6 @@ module Puma
     REQUEST_PATH = 'REQUEST_PATH'.freeze
 
     PATH_INFO = 'PATH_INFO'.freeze
-
-    PUMA_VERSION = VERSION = "1.2.1".freeze
 
     PUMA_TMP_BASE = "puma".freeze
 
@@ -86,6 +86,7 @@ module Puma
     SERVER_PORT = "SERVER_PORT".freeze
     HTTP_HOST = "HTTP_HOST".freeze
     PORT_80 = "80".freeze
+    LOCALHOST = "localhost".freeze
 
     SERVER_PROTOCOL = "SERVER_PROTOCOL".freeze
     HTTP_11 = "HTTP/1.1".freeze

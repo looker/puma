@@ -364,6 +364,9 @@ module Puma
           env[SERVER_NAME] = host
           env[SERVER_PORT] = PORT_80
         end
+      else
+        env[SERVER_NAME] = LOCALHOST
+        env[SERVER_PORT] = PORT_80
       end
 
       unless env[REQUEST_PATH]
@@ -435,6 +438,8 @@ module Puma
             return :async
           end
         rescue => e
+          @events.unknown_error self, e, "Rack app"
+
           status, headers, res_body = lowlevel_error(e)
         end
 
@@ -582,11 +587,10 @@ module Puma
       if remain > MAX_BODY
         stream = Tempfile.new(Const::PUMA_TMP_BASE)
         stream.binmode
+        stream.write body
       else
-        stream = StringIO.new
+        stream = StringIO.new body
       end
-
-      stream.write body
 
       # Read an odd sized chunk so we can read even sized ones
       # after this

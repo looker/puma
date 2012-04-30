@@ -53,6 +53,8 @@ module Puma
       remove.each do |k|
         ENV.delete k
       end
+
+      ENV['RACK_ENV'] ||= "development"
     end
 
     def restart_on_stop!
@@ -434,7 +436,7 @@ module Puma
 
       if @restart
         log "* Restarting..."
-        @status.stop true
+        @status.stop true if @status
         restart!
       end
     end
