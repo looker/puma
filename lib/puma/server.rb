@@ -299,6 +299,9 @@ module Puma
               when :async
                 close_socket = false
                 return
+              else  # keep-alive functionality, below, seems to cause hangs in some cases. https://github.com/puma/puma/issues/95
+                    # for now, just return and ignore keep-alive
+                return
               end
 
               nparsed += parser.body.bytesize if cl
