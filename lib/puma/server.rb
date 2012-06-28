@@ -66,7 +66,7 @@ module Puma
         "rack.multithread".freeze => true,
         "rack.multiprocess".freeze => false,
         "rack.run_once".freeze => true,
-        "SCRIPT_NAME".freeze => "",
+        "SCRIPT_NAME".freeze => ENV['SCRIPT_NAME'] || "",
 
         # Rack blows up if this is an empty string, and Rack::Lint
         # blows up if it's nil. So 'text/plain' seems like the most
@@ -409,6 +409,8 @@ module Puma
     def handle_request(env, client, body, cl)
       normalize_env env, client
 
+      env[PUMA_SOCKET] = client
+
       if cl
         body = read_body env, client, body, cl
         return false unless body
@@ -590,10 +592,13 @@ module Puma
       if remain > MAX_BODY
         stream = Tempfile.new(Const::PUMA_TMP_BASE)
         stream.binmode
-        stream.write body
       else
-        stream = StringIO.new body
+        # The body[0,0] trick is to get an empty string in the same
+        # encoding as body.
+        stream = StringIO.new body[0,0]
       end
+
+      stream.write body
 
       # Read an odd sized chunk so we can read even sized ones
       # after this

@@ -28,6 +28,37 @@ class TestCLI < Test::Unit::TestCase
     assert_equal File.read(@tmp_path).strip.to_i, Process.pid
   end
 
+  def test_control_for_tcp
+    url = "tcp://127.0.0.1:9877/"
+    sin = StringIO.new
+    sout = StringIO.new
+    cli = Puma::CLI.new ["-b", "tcp://127.0.0.1:9876",
+                         "--control", url,
+                         "--control-token", "",
+                         "test/lobster.ru"], sin, sout
+    cli.parse_options
+
+    thread_exception = nil
+    t = Thread.new do
+      begin
+        cli.run
+      rescue Exception => e
+        thread_exception = e
+      end
+    end 
+
+    sleep 1
+
+    s = TCPSocket.new "127.0.0.1", 9877
+    s << "GET /stats HTTP/1.0\r\n\r\n"
+    body = s.read
+    assert_equal '{ "backlog": 0, "running": 0 }', body.split("\r\n").last
+
+    cli.stop
+    t.join
+    assert_equal nil, thread_exception
+  end
+
   unless defined?(JRUBY_VERSION) || RbConfig::CONFIG["host_os"] =~ /mingw|mswin/
   def test_control
     url = "unix://#{@tmp_path}"
@@ -108,5 +139,21 @@ class TestCLI < Test::Unit::TestCase
 
     assert_equal Process.pid, data["pid"]
     assert_equal url, data["config"].options[:control_url]
+  end
+
+  def test_load_path
+    cli = Puma::CLI.new ["--include", 'foo/bar']
+    cli.parse_options
+
+    assert_equal 'foo/bar', $LOAD_PATH[0]
+    $LOAD_PATH.shift
+
+    cli = Puma::CLI.new ["--include", 'foo/bar:baz/qux']
+    cli.parse_options
+
+    assert_equal 'foo/bar', $LOAD_PATH[0]
+    $LOAD_PATH.shift
+    assert_equal 'baz/qux', $LOAD_PATH[0]
+    $LOAD_PATH.shift
   end
 end

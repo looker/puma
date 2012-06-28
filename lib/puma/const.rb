@@ -25,7 +25,7 @@ module Puma
   # too taxing on performance.
   module Const
 
-    PUMA_VERSION = VERSION = "1.2.2".freeze
+    PUMA_VERSION = VERSION = "1.4.0".freeze
 
     # The default number of seconds for another request within a persistent
     # session.
@@ -103,6 +103,7 @@ module Puma
     RACK_INPUT = "rack.input".freeze
     RACK_URL_SCHEME = "rack.url_scheme".freeze
     RACK_AFTER_REPLY = "rack.after_reply".freeze
+    PUMA_SOCKET = "puma.socket".freeze
 
     HTTP = "http".freeze
     HTTPS = "https".freeze
