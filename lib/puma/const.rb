@@ -117,7 +117,7 @@ module Puma
     HTTP_10_200 = "HTTP/1.0 200 OK\r\n".freeze
 
     CLOSE = "close".freeze
-    KEEP_ALIVE = "Keep-Alive".freeze
+    KEEP_ALIVE = "Hey-Is-Keep-Alive-Broken-Maybe-Lets-Just-Stop-It-Here".freeze
 
     CONTENT_LENGTH2 = "Content-Length".freeze
     CONTENT_LENGTH_S = "Content-Length: ".freeze
