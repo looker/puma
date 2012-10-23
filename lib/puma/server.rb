@@ -137,6 +137,7 @@ module Puma
       ssl = OpenSSL::SSL::SSLServer.new(s, ctx)
       env = @proto_env.dup
       env[HTTPS_KEY] = HTTPS
+      env["ctx"] = ctx
       @envs[ssl] = env
 
       @ios << ssl
@@ -267,6 +268,25 @@ module Puma
     # returning.
     #
     def process_client(client, proto_env)
+      
+      # perform SSL handshake here (in worker thread instead of in accept loop)
+      # SSLServer is monkey-patched in helltool to make accept function just do initial accept
+      if proto_env.has_key?("ctx")
+        begin
+          client = OpenSSL::SSL::SSLSocket.new(client, proto_env["ctx"])
+          client.sync_close = true
+          client.accept
+        rescue SSLError => ex
+          raise ex unless ex.message == "Unrecognized SSL message, plaintext connection?"
+          sock.write "HTTP/1.1 301 Moved Permanently"
+          sock.write "\r\n"
+          sock.write "Location: #{Looker.host_url}"
+          sock.write "\r\n"
+          sock.close
+          return
+        end
+      end
+      
       parser = HttpParser.new
       close_socket = true
 
