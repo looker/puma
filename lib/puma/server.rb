@@ -270,14 +270,19 @@ module Puma
     def process_client(client, proto_env)
       
       # perform SSL handshake here (in worker thread instead of in accept loop)
-      # SSLServer is monkey-patched in helltool to make accept function just do initial accept
+      # SSLServer is monkey-patched to make accept function just do initial accept
       if proto_env.has_key?("ctx")
         begin
           client = OpenSSL::SSL::SSLSocket.new(client, proto_env["ctx"])
           client.sync_close = true
-          client.accept
+          
+          Timeout::timeout(10) {
+            client.accept
+          }
+          
         rescue SSLError => ex
           raise ex unless ex.message == "Unrecognized SSL message, plaintext connection?"
+          
           sock.write "HTTP/1.1 301 Moved Permanently"
           sock.write "\r\n"
           sock.write "Location: #{Looker.host_url}"
