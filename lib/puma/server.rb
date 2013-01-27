@@ -213,22 +213,32 @@ module Puma
               ios = IO.select sockets
               ios.first.each do |sock|
                 if sock == check
+                  $log.error "handle check" if $log_puma
                   break if handle_check
                 else
+                  $log.error "accepting socket" if $log_puma
                   pool << [sock.accept, @envs.fetch(sock, @proto_env)]
                 end
               end
             rescue Errno::ECONNABORTED
               # client closed the socket even before accept
+              $log.error "Errno::ECONNABORTED" if $log_puma
               client.close rescue nil
             rescue Object => e
               @events.unknown_error self, e, "Listen loop"
             end
           end
+          
+          $log.error "SHUTDOWN!"
 
           graceful_shutdown if @status == :stop
         ensure
+          
+          $log.error "in ensure!"
+          
           unless @status == :restart
+            $log.error "shutting down"
+            
             begin
               @ios.each { |i| i.close }
               @unix_paths.each { |i| File.unlink i }
@@ -354,8 +364,10 @@ module Puma
         end
 
       # The client disconnected while we were reading data
-      rescue EOFError, SystemCallError
+      rescue EOFError, SystemCallError => e
         # Swallow them. The ensure tries to close +client+ down
+
+        $log.error "parse error: #{e}\n#{e.backtrace}" if $log_puma
 
       # The client doesn't know HTTP well
       rescue HttpParserError => e

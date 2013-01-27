@@ -50,6 +50,7 @@ module Puma
     # Must be called with @mutex held!
     #
     def spawn_thread
+      $log.error "spawning thread from thread: #{Thread.current}" if $log_puma
       @spawned += 1
 
       th = Thread.new do
@@ -62,6 +63,9 @@ module Puma
           continue = true
 
           @mutex.synchronize do
+            
+            $log.error "worker thread: #{Thread.current}: in mutex" if $log_puma
+            
             while todo.empty?
               if @trim_requested > 0
                 @trim_requested -= 1
@@ -77,6 +81,8 @@ module Puma
               @waiting += 1
               @cond.wait @mutex
               @waiting -= 1
+              
+              $log.error "worker thread: #{Thread.current}: after wait - about to work" if $log_puma
 
               if @shutdown
                 continue = false
@@ -85,6 +91,7 @@ module Puma
             end
 
             work = todo.pop if continue
+            $log.error "worker thread: #{Thread.current}: done work" if $log_puma
           end
 
           break unless continue
@@ -107,7 +114,11 @@ module Puma
 
     # Add +work+ to the todo list for a Thread to pickup and process.
     def <<(work)
+      $log.error "adding work from thread: #{Thread.current}" if $log_puma
+      
       @mutex.synchronize do
+        $log.error "<<work#synchronize" if $log_puma
+        
         if @shutdown
           raise "Unable to add work while shutting down"
         end
