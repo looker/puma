@@ -210,6 +210,7 @@ module Puma
 
           while @status == :run
             begin
+              $log.error "about to select" if $log_puma
               ios = IO.select sockets
               ios.first.each do |sock|
                 if sock == check
@@ -232,6 +233,9 @@ module Puma
           $log.error "SHUTDOWN!"
 
           graceful_shutdown if @status == :stop
+        rescue Object => e
+          $log.error "*** rescue in main loop ***"
+          $log.error "#{e}\n#{e.backtrace}"
         ensure
           
           $log.error "in ensure!"
