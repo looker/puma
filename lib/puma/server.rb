@@ -280,14 +280,15 @@ module Puma
             client.accept
           }
           
-        rescue SSLError => ex
-          raise ex unless ex.message == "Unrecognized SSL message, plaintext connection?"
+        rescue Object => e
+          if e.message == "Unrecognized SSL message, plaintext connection?"
+            client.write "HTTP/1.1 301 Moved Permanently"
+            client.write "\r\n"
+            client.write "Location: #{Looker.host_url}"
+            client.write "\r\n"
+          end
           
-          sock.write "HTTP/1.1 301 Moved Permanently"
-          sock.write "\r\n"
-          sock.write "Location: #{Looker.host_url}"
-          sock.write "\r\n"
-          sock.close
+          client.close
           return
         end
       end
