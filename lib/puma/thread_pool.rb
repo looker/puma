@@ -82,7 +82,7 @@ module Puma
               @cond.wait @mutex
               @waiting -= 1
               
-              $log.error "worker thread: #{Thread.current}: after wait - about to work" if $log_puma
+              $log.error "worker thread: #{Thread.current}: after wait - about to add work" if $log_puma
 
               if @shutdown
                 continue = false
@@ -91,10 +91,14 @@ module Puma
             end
 
             work = todo.pop if continue
-            $log.error "worker thread: #{Thread.current}: done work" if $log_puma
+            $log.error "worker thread: #{Thread.current}: setting work" if $log_puma
           end
+          
+          $log.error "worker thread: #{Thread.current}: about to work. continue? #{continue}" if $log_puma
 
           break unless continue
+
+          $log.error "worker thread: #{Thread.current}: calling work" if $log_puma
 
           block.call work
         end
@@ -122,13 +126,17 @@ module Puma
         if @shutdown
           raise "Unable to add work while shutting down"
         end
+        
+        $log.error "adding work to @todo. @waiting=#{@waiting}, @spawned=#{@spawned}, @max=#{@max}" if $log_puma
 
         @todo << work
 
         if @waiting == 0 and @spawned < @max
+          $log.error "spawning thread in <<work" if $log_puma
           spawn_thread
         end
 
+        $log.error "<<work#condition signal" if $log_puma
         @cond.signal
       end
     end

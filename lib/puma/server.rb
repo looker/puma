@@ -287,12 +287,19 @@ module Puma
       # SSLServer is monkey-patched to make accept function just do initial accept
       if proto_env.has_key?("ctx")
         begin
+          
+          $log.error "bout to SSLSocket" if $log_puma
+          
           client = OpenSSL::SSL::SSLSocket.new(client, proto_env["ctx"])
           client.sync_close = true
+          
+          $log.error "bout to accept" if $log_puma
           
           Timeout::timeout(10) {
             client.accept
           }
+          
+          $log.error "accepted" if $log_puma
           
         rescue Object => e
           if e.message == "Unrecognized SSL message, plaintext connection?"
