@@ -10,6 +10,7 @@ require 'puma/compat'
 require 'puma/puma_http11'
 
 require 'socket'
+require 'timeout'
 
 module Puma
 
