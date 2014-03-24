@@ -2,9 +2,7 @@ package org.jruby.puma;
 
 import org.jruby.Ruby;
 import org.jruby.RubyClass;
-import org.jruby.RubyHash;
 import org.jruby.RubyModule;
-import org.jruby.RubyNumeric;
 import org.jruby.RubyObject;
 import org.jruby.RubyString;
 
@@ -15,8 +13,6 @@ import org.jruby.runtime.ObjectAllocator;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.builtin.IRubyObject;
 
-import org.jruby.exceptions.RaiseException;
-
 import org.jruby.util.ByteList;
 
 
@@ -25,7 +21,11 @@ import javax.net.ssl.SSLEngineResult.*;
 import java.io.*;
 import java.security.*;
 import java.nio.*;
+import java.security.cert.CertificateException;
 
+/**
+ * dm todo synchronization concerns?
+ */
 public class MiniSSL extends RubyObject {
   private static ObjectAllocator ALLOCATOR = new ObjectAllocator() {
     public IRubyObject allocate(Ruby runtime, RubyClass klass) {
@@ -45,46 +45,97 @@ public class MiniSSL extends RubyObject {
     eng.defineAnnotatedMethods(MiniSSL.class);
   }
 
-  private Ruby runtime;
-  private SSLContext sslc;
-
   private SSLEngine  engine;
 
-  private ByteBuffer peerAppData;
-  private ByteBuffer peerNetData;
-  private ByteBuffer netData;
-  private ByteBuffer dummy;
-  
+  /**
+   * dm todo doc
+   * dm todo this is mostly pass throughs to ByteBuffer.  Do we need a better abstraction?
+   */
+  private static class MiniSSLBuffer {
+    ByteBuffer buffer;
+
+    private MiniSSLBuffer(int capacity) {
+      buffer = ByteBuffer.allocate(capacity);
+      buffer.limit(0);
+      buffer.clear();
+    }
+
+    public void put(byte[] bytes) {
+      buffer.limit(buffer.limit() + bytes.length);
+      buffer.put(bytes);
+    }
+
+    public ByteBuffer getRawBuffer() {
+      return buffer;
+    }
+
+    public void clear() {
+      buffer.clear();
+    }
+
+    public void flip() {
+      buffer.flip();
+    }
+
+    public boolean hasRemaining() {
+      return buffer.hasRemaining();
+    }
+
+    public int position() {
+      return buffer.position();
+    }
+
+    public int capacity() {
+      return buffer.capacity();
+    }
+
+    public void resize(int newCapacity) {
+      ByteBuffer dstTmp = ByteBuffer.allocate(newCapacity + buffer.position());
+      buffer.flip();
+      dstTmp.put(buffer);
+      buffer = dstTmp;
+    }
+
+    // dm todo doc that this drains the buffer?
+    public ByteList asByteList() {
+      buffer.flip();
+      if (!buffer.hasRemaining()) {
+        buffer.clear();
+        return null;
+      }
+
+      byte[] bss = new byte[buffer.limit()];
+
+      buffer.get(bss);
+      buffer.clear();
+      return new ByteList(bss);
+    }
+  }
+
+  private MiniSSLBuffer appData;
+  private MiniSSLBuffer inboundNetData;
+  private MiniSSLBuffer outboundNetData;
+
   public MiniSSL(Ruby runtime, RubyClass klass) {
     super(runtime, klass);
-
-    this.runtime = runtime;
   }
 
   @JRubyMethod(meta = true)
   public static IRubyObject server(ThreadContext context, IRubyObject recv, IRubyObject key, IRubyObject cert) {
       RubyClass klass = (RubyClass) recv;
-      IRubyObject newInstance = klass.newInstance(context,
+
+      return klass.newInstance(context,
           new IRubyObject[] { key, cert },
           Block.NULL_BLOCK);
-
-      return newInstance;
   }
 
   @JRubyMethod
-  public IRubyObject initialize(IRubyObject key, IRubyObject cert) 
-      throws java.security.KeyStoreException,
-             java.io.FileNotFoundException,
-             java.io.IOException,
-             java.io.FileNotFoundException,
-             java.security.NoSuchAlgorithmException,
-             java.security.KeyManagementException,
-             java.security.cert.CertificateException,
-             java.security.UnrecoverableKeyException
-  {
+  public IRubyObject initialize(IRubyObject key, IRubyObject cert)
+      throws KeyStoreException, IOException, CertificateException, NoSuchAlgorithmException, UnrecoverableKeyException, KeyManagementException {
     KeyStore ks = KeyStore.getInstance(KeyStore.getDefaultType());
     KeyStore ts = KeyStore.getInstance(KeyStore.getDefaultType());
 
+    // dm todo this is the test password
     char[] pass = "blahblah".toCharArray();
 
     ks.load(new FileInputStream(key.convertToString().asJavaString()),
@@ -102,26 +153,15 @@ public class MiniSSL extends RubyObject {
 
     sslCtx.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
 
-    sslc = sslCtx;
-
-    engine = sslc.createSSLEngine();
+    engine = sslCtx.createSSLEngine();
     engine.setUseClientMode(false);
     // engine.setNeedClientAuth(true);
 
     SSLSession session = engine.getSession();
-    peerNetData = ByteBuffer.allocate(session.getPacketBufferSize());
-    peerAppData = ByteBuffer.allocate(session.getApplicationBufferSize());		
-    netData = ByteBuffer.allocate(session.getPacketBufferSize());
-    peerNetData.limit(0);
-    peerAppData.limit(0);
-    netData.limit(0);
+    inboundNetData = new MiniSSLBuffer(session.getPacketBufferSize());
+    outboundNetData = new MiniSSLBuffer(session.getPacketBufferSize());
+    appData = new MiniSSLBuffer(session.getApplicationBufferSize());
 
-    peerNetData.clear();
-    peerAppData.clear();
-    netData.clear();
-
-    dummy = ByteBuffer.allocate(0);
-    
     return this;
   }
 
@@ -129,104 +169,151 @@ public class MiniSSL extends RubyObject {
   public IRubyObject inject(IRubyObject arg) {
     byte[] bytes = arg.convertToString().getBytes();
 
-    peerNetData.limit(peerNetData.limit() + bytes.length);
+    inboundNetData.put(bytes);
 
-    log("capacity: " + peerNetData.capacity() + " limit: " + peerNetData.limit());
-
-    peerNetData.put(bytes);
-
-    log("netData: " + peerNetData.position() + "/" + peerAppData.limit());
+    log("inboundNetData injected: " + bytes.length + " bytes");
     return this;
   }
 
+  private abstract class SSLOp {
+    MiniSSLBuffer src;
+    MiniSSLBuffer dst;
+
+    protected SSLOp(MiniSSLBuffer src, MiniSSLBuffer dst) {
+      this.src = src;
+      this.dst = dst;
+    }
+
+    // dm todo doc
+    abstract SSLEngineResult run(ByteBuffer src, ByteBuffer dst) throws SSLException;
+
+    // dm todo doc
+    final SSLEngineResult doRun()  throws SSLException {
+      SSLEngineResult res = null;
+      boolean retryOp = true;
+      while (retryOp) {
+        res = run(src.getRawBuffer(), dst.getRawBuffer());
+        switch (res.getStatus()) {
+          case BUFFER_OVERFLOW:
+            log("Overflowin'");
+            // Could attempt to drain the dst buffer of any already obtained
+            // data, but we'll just increase it to the size needed.
+            int newSize = Math.max(engine.getSession().getPacketBufferSize(), engine.getSession().getApplicationBufferSize());
+            dst.resize(newSize);
+            // retry the operation.
+            retryOp = true;
+            break;
+          case BUFFER_UNDERFLOW:
+            log("Underflowin'");
+            newSize = Math.max(engine.getSession().getPacketBufferSize(), engine.getSession().getApplicationBufferSize());
+            // Resize buffer if needed.
+            if (newSize > dst.capacity()) {
+              src.resize(newSize);
+            }
+            // need to wait for more data to come in before we retry
+            retryOp = false;
+            break;
+          default:
+            retryOp = false;
+            // dm todo other cases: CLOSED, OK.
+        }
+      }
+
+      runDelegatedTasks(engine.getHandshakeStatus(), engine);
+      log("AFTER OP -> read: ", engine, res);
+      return res;
+    }
+  }
+
   @JRubyMethod
-  public IRubyObject read() throws javax.net.ssl.SSLException, Exception {
-    peerAppData.clear();
-    peerNetData.flip();
+  public IRubyObject read() throws Exception {
+    log("about to read inboundNetData bytes: " + inboundNetData.position());
+    inboundNetData.flip();
     SSLEngineResult res;
 
-    log("available read: " + peerNetData.position() + "/ " + peerNetData.limit());
-
-    if(!peerNetData.hasRemaining()) {
+    if(!inboundNetData.hasRemaining()) {
       return getRuntime().getNil();
     }
 
-    do {
-      res = engine.unwrap(peerNetData, peerAppData);
-    } while(res.getStatus() == SSLEngineResult.Status.OK &&
-        res.getHandshakeStatus() == SSLEngineResult.HandshakeStatus.NEED_UNWRAP &&
-        res.bytesProduced() == 0);
+    res = new SSLOp(inboundNetData, appData) {
+      @Override
+      public SSLEngineResult run(ByteBuffer src, ByteBuffer dst) throws SSLException {
+        return engine.unwrap(src, dst);
+      }
+    }.doRun();
+    log("AFTER INITIAL UNWRAP -> read: ", engine, res);
 
-    log("read: ", res);
+    HandshakeStatus handshakeStatus = engine.getHandshakeStatus();
+    boolean done = false;
+    log(handshakeStatus.toString());
+    switch (handshakeStatus) {
+      case NEED_WRAP:
+        log("wrapping to outbound...");
+        res = new SSLOp(appData, outboundNetData) {
+          @Override
+          public SSLEngineResult run(ByteBuffer src, ByteBuffer dst) throws SSLException {
+            return engine.wrap(src, dst);
+          }
+        }.doRun();
+        log("AFTER HANDSHAKE WRAP -> read: ", engine, res);
+        break;
+      case NEED_UNWRAP:
+        while (handshakeStatus == HandshakeStatus.NEED_UNWRAP
+            && !done
+            && inboundNetData.hasRemaining()) {
+          log("unwrapping more after handshake...");
+          res = new SSLOp(inboundNetData, appData) {
+            @Override
+            public SSLEngineResult run(ByteBuffer src, ByteBuffer dst) throws SSLException {
+              return engine.unwrap(src, dst);
+            }
+          }.doRun();
+          handshakeStatus = engine.getHandshakeStatus();
+          log("AFTER HANDSHAKE UNWRAP -> read: ", engine, res);
+          if (res.getStatus() == Status.BUFFER_UNDERFLOW) {
+            // need more data before we can shake more hands
+            done = true;
+          }
 
-    if(peerNetData.hasRemaining()) {
-      log("STILL HAD peerNetData!");
+          // dm todo this dupes the case above...
+          while (handshakeStatus == HandshakeStatus.NEED_WRAP) {
+            log("wrapping to outbound...");
+            res = new SSLOp(new MiniSSLBuffer(0), outboundNetData) {
+              @Override
+              public SSLEngineResult run(ByteBuffer src, ByteBuffer dst) throws SSLException {
+                return engine.wrap(src, dst);
+              }
+            }.doRun();
+            handshakeStatus = engine.getHandshakeStatus();
+            log("AFTER HANDSHAKE WRAP -> read: ", engine, res);
+          }
+        }
+        break;
     }
 
-    peerNetData.position(0);
-    peerNetData.limit(0);
+    inboundNetData.clear();
 
-    HandshakeStatus hsStatus = runDelegatedTasks(res, engine);
-
-    if(res.getStatus() == SSLEngineResult.Status.BUFFER_UNDERFLOW) {
+    ByteList appDataByteList = appData.asByteList();
+    if (appDataByteList == null) {
       return getRuntime().getNil();
     }
-
-    if(hsStatus == HandshakeStatus.NEED_WRAP) {
-      netData.clear();
-      log("netData: " + netData.limit());
-      engine.wrap(dummy, netData);
-      return getRuntime().getNil();
-    }
-
-    if(hsStatus == HandshakeStatus.NEED_UNWRAP) {
-      return getRuntime().getNil();
-
-      // log("peerNet: " + peerNetData.position() + "/" + peerNetData.limit());
-      // log("peerApp: " + peerAppData.position() + "/" + peerAppData.limit());
-
-      // peerNetData.compact();
-
-      // log("peerNet: " + peerNetData.position() + "/" + peerNetData.limit());
-        // do {
-          // res = engine.unwrap(peerNetData, peerAppData);
-        // } while(res.getStatus() == SSLEngineResult.Status.OK &&
-            // res.getHandshakeStatus() == SSLEngineResult.HandshakeStatus.NEED_UNWRAP &&
-            // res.bytesProduced() == 0);
-      // return getRuntime().getNil();
-    }
-
-    // if(peerAppData.position() == 0 && 
-        // res.getStatus() == SSLEngineResult.Status.OK &&
-        // peerNetData.hasRemaining()) {
-      // res = engine.unwrap(peerNetData, peerAppData);
-    // }
-
-    byte[] bss = new byte[peerAppData.limit()];
-
-    peerAppData.get(bss);
 
     RubyString str = getRuntime().newString("");
-    str.setValue(new ByteList(bss));
+    str.setValue(appDataByteList);
 
+    log("--- Data read begin ---\n");
+    log(str.asJavaString());
+    log("\n--- Data read end   ---");
     return str;
   }
 
-  private static HandshakeStatus runDelegatedTasks(SSLEngineResult result,
-      SSLEngine engine) throws Exception {
-
-    HandshakeStatus hsStatus = result.getHandshakeStatus();
+  private static HandshakeStatus runDelegatedTasks(HandshakeStatus hsStatus, SSLEngine engine) {
 
     if(hsStatus == HandshakeStatus.NEED_TASK) {
       Runnable runnable;
       while ((runnable = engine.getDelegatedTask()) != null) {
         log("\trunning delegated task...");
         runnable.run();
-      }
-      hsStatus = engine.getHandshakeStatus();
-      if (hsStatus == HandshakeStatus.NEED_TASK) {
-        throw new Exception(
-            "handshake shouldn't need additional tasks");
       }
       log("\tnew HandshakeStatus: " + hsStatus);
     }
@@ -235,16 +322,13 @@ public class MiniSSL extends RubyObject {
   }
   
 
-  private static void log(String str, SSLEngineResult result) {
-    System.out.println("The format of the SSLEngineResult is: \n" +
-        "\t\"getStatus() / getHandshakeStatus()\" +\n" +
-        "\t\"bytesConsumed() / bytesProduced()\"\n");
-
-    HandshakeStatus hsStatus = result.getHandshakeStatus();
+  // dm todo nuke logging or put it behind a flag
+  private static void log(String str, SSLEngine engine, SSLEngineResult result) {
+    HandshakeStatus hsStatus = engine.getHandshakeStatus();
     log(str +
         result.getStatus() + "/" + hsStatus + ", " +
-        result.bytesConsumed() + "/" + result.bytesProduced() +
-        " bytes");
+        "\n\tbytes consumed:" + result.bytesConsumed() +
+        "\n\tbytes produced:" + result.bytesProduced());
     if (hsStatus == HandshakeStatus.FINISHED) {
       log("\t...ready for application data");
     }
@@ -253,36 +337,30 @@ public class MiniSSL extends RubyObject {
   private static void log(String str) {
     System.out.println(str);
   }
-  
-  
 
   @JRubyMethod
   public IRubyObject write(IRubyObject arg) throws javax.net.ssl.SSLException {
-    log("write from: " + netData.position());
+    log("write from: " + outboundNetData.position());
 
     byte[] bls = arg.convertToString().getBytes();
     ByteBuffer src = ByteBuffer.wrap(bls);
 
-    SSLEngineResult res = engine.wrap(src, netData);
+    SSLEngineResult res = engine.wrap(src, outboundNetData.getRawBuffer());
 
     return getRuntime().newFixnum(res.bytesConsumed());
   }
 
   @JRubyMethod
   public IRubyObject extract() {
-    netData.flip();
-
-    if(!netData.hasRemaining()) {
+    ByteList dataByteList = outboundNetData.asByteList();
+    if (dataByteList == null) {
       return getRuntime().getNil();
     }
 
-    byte[] bss = new byte[netData.limit()];
-
-    netData.get(bss);
-    netData.clear();
-
     RubyString str = getRuntime().newString("");
-    str.setValue(new ByteList(bss));
+    str.setValue(dataByteList);
+
+    log("-----> extracting " + dataByteList.getRealSize() + " bytes");
 
     return str;
   }

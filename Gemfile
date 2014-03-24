@@ -1,6 +1,6 @@
 source "http://rubygems.org"
 
-gem "hoe"
+gem "hoe", '= 3.6'
 gem "hoe-git"
 gem "hoe-ignore"
 gem "rdoc"

@@ -1,7 +1,4 @@
 require 'test/unit'
-
-unless defined? JRUBY_VERSION
-
 require 'puma'
 require 'puma/minissl'
 
@@ -20,6 +17,4 @@ class TestMiniSSL < Test::Unit::TestCase
     exception = assert_raise(ArgumentError) { ctx.cert = "/no/such/cert" }
     assert_equal("No such cert file '/no/such/cert'", exception.message)
   end
-end
-
 end
