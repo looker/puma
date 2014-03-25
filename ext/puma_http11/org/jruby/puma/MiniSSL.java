@@ -1,10 +1,6 @@
 package org.jruby.puma;
 
-import org.jruby.Ruby;
-import org.jruby.RubyClass;
-import org.jruby.RubyModule;
-import org.jruby.RubyObject;
-import org.jruby.RubyString;
+import org.jruby.*;
 
 import org.jruby.anno.JRubyMethod;
 
@@ -60,8 +56,12 @@ public class MiniSSL extends RubyObject {
       buffer.clear();
     }
 
+    private MiniSSLBuffer(byte[] initialContents) {
+      buffer = ByteBuffer.wrap(initialContents);
+    }
+
     public void put(byte[] bytes) {
-      buffer.limit(buffer.limit() + bytes.length);
+      buffer.limit(bytes.length);
       buffer.put(bytes);
     }
 
@@ -343,9 +343,14 @@ public class MiniSSL extends RubyObject {
     log("write from: " + outboundNetData.position());
 
     byte[] bls = arg.convertToString().getBytes();
-    ByteBuffer src = ByteBuffer.wrap(bls);
+    MiniSSLBuffer input = new MiniSSLBuffer(bls);
 
-    SSLEngineResult res = engine.wrap(src, outboundNetData.getRawBuffer());
+    SSLEngineResult res = new SSLOp(input, outboundNetData) {
+      @Override
+      SSLEngineResult run(ByteBuffer src, ByteBuffer dst) throws SSLException {
+        return engine.wrap(src, dst);
+      }
+    }.doRun();
 
     return getRuntime().newFixnum(res.bytesConsumed());
   }
