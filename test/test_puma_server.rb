@@ -18,14 +18,6 @@ class TestPumaServer < Test::Unit::TestCase
 
     @events = Puma::Events.new STDOUT, STDERR
     @server = Puma::Server.new @app, @events
-
-    if defined?(JRUBY_VERSION)
-      @ssl_key =  File.expand_path "../../examples/puma/keystore.jks", __FILE__
-      @ssl_cert = @ssl_key
-    else
-      @ssl_key =  File.expand_path "../../examples/puma/puma_keypair.pem", __FILE__
-      @ssl_cert = File.expand_path "../../examples/puma/cert_puma.pem", __FILE__
-    end
   end
 
   def teardown
@@ -35,8 +27,13 @@ class TestPumaServer < Test::Unit::TestCase
   def test_url_scheme_for_https
     ctx = Puma::MiniSSL::Context.new
 
-    ctx.key = @ssl_key
-    ctx.cert = @ssl_cert
+    if defined?(JRUBY_VERSION)
+      ctx.keystore =  File.expand_path "../../examples/puma/keystore.jks", __FILE__
+      ctx.keystore_pass = 'blahblah'
+    else
+      ctx.key =  File.expand_path "../../examples/puma/puma_keypair.pem", __FILE__
+      ctx.cert = File.expand_path "../../examples/puma/cert_puma.pem", __FILE__
+    end
 
     ctx.verify_mode = Puma::MiniSSL::VERIFY_NONE
 

@@ -114,27 +114,25 @@ public class MiniSSL extends RubyObject {
   }
 
   @JRubyMethod(meta = true)
-  public static IRubyObject server(ThreadContext context, IRubyObject recv, IRubyObject key, IRubyObject cert) {
+  public static IRubyObject server(ThreadContext context, IRubyObject recv, IRubyObject miniSSLContext) {
     RubyClass klass = (RubyClass) recv;
 
     return klass.newInstance(context,
-        new IRubyObject[] { key, cert },
+        new IRubyObject[] { miniSSLContext },
         Block.NULL_BLOCK);
   }
 
   @JRubyMethod
-  public IRubyObject initialize(IRubyObject key, IRubyObject cert)
+  public IRubyObject initialize(ThreadContext threadContext, IRubyObject miniSSLContext)
       throws KeyStoreException, IOException, CertificateException, NoSuchAlgorithmException, UnrecoverableKeyException, KeyManagementException {
     KeyStore ks = KeyStore.getInstance(KeyStore.getDefaultType());
 
-    // dm todo this is the test password, probabaly need to take custom args for jruby: jks keystore and password
-    char[] pass = "blahblah".toCharArray();
-
-    ks.load(new FileInputStream(key.convertToString().asJavaString()),
-                                pass);
+    char[] password = miniSSLContext.callMethod(threadContext, "keystore_pass").convertToString().asJavaString().toCharArray();
+    ks.load(new FileInputStream(miniSSLContext.callMethod(threadContext, "keystore").convertToString().asJavaString()),
+        password);
 
     KeyManagerFactory kmf = KeyManagerFactory.getInstance("SunX509");
-    kmf.init(ks, pass);
+    kmf.init(ks, password);
 
     SSLContext sslCtx = SSLContext.getInstance("TLS");
 
