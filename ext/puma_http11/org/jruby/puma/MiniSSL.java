@@ -185,7 +185,6 @@ public class MiniSSL extends RubyObject {
         case BUFFER_OVERFLOW:
           log("SSLOp#doRun(): running overflow logic");
           // increase the buffer size to accommodate the overflowing data
-          // dm todo do we like the max?
           int newSize = Math.max(engine.getSession().getPacketBufferSize(), engine.getSession().getApplicationBufferSize());
           dst.resize(newSize);
           // retry the operation.
