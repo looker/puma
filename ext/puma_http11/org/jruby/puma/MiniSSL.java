@@ -43,16 +43,11 @@ public class MiniSSL extends RubyObject {
 
   private SSLEngine  engine;
 
-  /**
-   * dm todo doc
-   * dm todo this is mostly pass throughs to ByteBuffer.  Do we need a better abstraction?
-   */
   private static class MiniSSLBuffer {
     ByteBuffer buffer;
 
     private MiniSSLBuffer(int capacity) {
       buffer = ByteBuffer.allocate(capacity);
-      buffer.limit(0);
       buffer.clear();
     }
 
@@ -69,11 +64,11 @@ public class MiniSSL extends RubyObject {
       return buffer;
     }
 
-    public void clear() {
+    public void reset() {
       buffer.clear();
     }
 
-    public void flip() {
+    public void prepForRead() {
       buffer.flip();
     }
 
@@ -92,7 +87,9 @@ public class MiniSSL extends RubyObject {
       buffer = dstTmp;
     }
 
-    // dm todo doc that this drains the buffer?
+    /**
+     * Drains the buffer to a ByteList, or returns null for an empty buffer
+     */
     public ByteList asByteList() {
       buffer.flip();
       if (!buffer.hasRemaining()) {
@@ -151,7 +148,7 @@ public class MiniSSL extends RubyObject {
 
     engine = sslCtx.createSSLEngine();
     engine.setUseClientMode(false);
-    // engine.setNeedClientAuth(true);
+    // engine.setNeedClientAuth(true); dm todo what's this?
 
     SSLSession session = engine.getSession();
     inboundNetData = new MiniSSLBuffer(session.getPacketBufferSize());
@@ -192,8 +189,8 @@ public class MiniSSL extends RubyObject {
         switch (res.getStatus()) {
           case BUFFER_OVERFLOW:
             log("SSLOp#doRun(): running overflow logic");
-            // Could attempt to drain the dst buffer of any already obtained
-            // data, but we'll just increase it to the size needed.
+            // increase the buffer size to accommodate the overflowing data
+            // dm todo do we like the max?
             int newSize = Math.max(engine.getSession().getPacketBufferSize(), engine.getSession().getApplicationBufferSize());
             dst.resize(newSize);
             // retry the operation.
@@ -202,7 +199,7 @@ public class MiniSSL extends RubyObject {
           case BUFFER_UNDERFLOW:
             log("SSLOp#doRun(): running underflow logic");
             newSize = Math.max(engine.getSession().getPacketBufferSize(), engine.getSession().getApplicationBufferSize());
-            // Resize buffer if needed.
+            // resize the buffer if needed
             if (newSize > dst.capacity()) {
               src.resize(newSize);
             }
@@ -229,14 +226,13 @@ public class MiniSSL extends RubyObject {
 
   @JRubyMethod
   public IRubyObject read() throws Exception {
-    inboundNetData.flip();
-    SSLEngineResult res;
+    inboundNetData.prepForRead();
 
     if(!inboundNetData.hasRemaining()) {
       return getRuntime().getNil();
     }
 
-    res = new SSLOp(inboundNetData, appData) {
+    SSLEngineResult res = new SSLOp(inboundNetData, appData) {
       @Override
       public SSLEngineResult run(ByteBuffer src, ByteBuffer dst) throws SSLException {
         return engine.unwrap(src, dst);
@@ -288,7 +284,7 @@ public class MiniSSL extends RubyObject {
         break;
     }
 
-    inboundNetData.clear();
+    inboundNetData.reset();
 
     ByteList appDataByteList = appData.asByteList();
     if (appDataByteList == null) {
