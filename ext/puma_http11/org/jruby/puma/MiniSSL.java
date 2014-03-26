@@ -126,29 +126,22 @@ public class MiniSSL extends RubyObject {
   public IRubyObject initialize(IRubyObject key, IRubyObject cert)
       throws KeyStoreException, IOException, CertificateException, NoSuchAlgorithmException, UnrecoverableKeyException, KeyManagementException {
     KeyStore ks = KeyStore.getInstance(KeyStore.getDefaultType());
-    KeyStore ts = KeyStore.getInstance(KeyStore.getDefaultType());
 
-    // dm todo this is the test password
+    // dm todo this is the test password, probabaly need to take custom args for jruby: jks keystore and password
     char[] pass = "blahblah".toCharArray();
 
     ks.load(new FileInputStream(key.convertToString().asJavaString()),
                                 pass);
-    ts.load(new FileInputStream(cert.convertToString().asJavaString()),
-            pass);
 
     KeyManagerFactory kmf = KeyManagerFactory.getInstance("SunX509");
     kmf.init(ks, pass);
 
-    TrustManagerFactory tmf = TrustManagerFactory.getInstance("SunX509");
-    tmf.init(ts);
-
     SSLContext sslCtx = SSLContext.getInstance("TLS");
 
-    sslCtx.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
+    sslCtx.init(kmf.getKeyManagers(), null, null);
 
     engine = sslCtx.createSSLEngine();
     engine.setUseClientMode(false);
-    // engine.setNeedClientAuth(true); dm todo what's this?
 
     SSLSession session = engine.getSession();
     inboundNetData = new MiniSSLBuffer(session.getPacketBufferSize());
