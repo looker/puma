@@ -231,31 +231,24 @@ public class MiniSSL extends RubyObject {
 
     HandshakeStatus handshakeStatus = engine.getHandshakeStatus();
     boolean done = false;
-    switch (handshakeStatus) {
-      case NEED_WRAP:
-        res = doOp(SSLOperation.WRAP, appData, outboundNetData);
-        log("read(): after handshake wrap", engine, res);
-        break;
-      case NEED_UNWRAP:
-        while (handshakeStatus == HandshakeStatus.NEED_UNWRAP
-            && !done
-            && inboundNetData.hasRemaining()) {
+    while (!done) {
+      switch (handshakeStatus) {
+        case NEED_WRAP:
+          res = doOp(SSLOperation.WRAP, appData, outboundNetData);
+          log("read(): after handshake wrap", engine, res);
+          break;
+        case NEED_UNWRAP:
           res = doOp(SSLOperation.UNWRAP, inboundNetData, appData);
-          handshakeStatus = engine.getHandshakeStatus();
           log("read(): after handshake unwrap", engine, res);
           if (res.getStatus() == Status.BUFFER_UNDERFLOW) {
             // need more data before we can shake more hands
             done = true;
           }
-
-          // dm todo this dupes the case above...
-          while (handshakeStatus == HandshakeStatus.NEED_WRAP) {
-            res = doOp(SSLOperation.WRAP, new MiniSSLBuffer(0), outboundNetData);
-            handshakeStatus = engine.getHandshakeStatus();
-            log("read(): after handshake wrap", engine, res);
-          }
-        }
-        break;
+          break;
+        default:
+          done = true;
+      }
+      handshakeStatus = engine.getHandshakeStatus();
     }
 
     inboundNetData.reset();
