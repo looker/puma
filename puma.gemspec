@@ -20,7 +20,7 @@ Gem::Specification.new do |s|
   s.description = "Puma is a simple, fast, threaded, and highly concurrent HTTP 1.1 server for Ruby/Rack applications. Puma is intended for use in both development and production environments. In order to get the best throughput, it is highly recommended that you use a  Ruby implementation with real threads like Rubinius or JRuby."
   s.email = ["evan@phx.io"]
   s.executables = ["puma", "pumactl"]
-  s.extensions = ["ext/puma_http11/extconf.rb"]
+  # s.extensions = ["ext/puma_http11/extconf.rb"]
   s.files = `git ls-files`.split($/)
   s.homepage = "http://puma.io"
   s.license = "BSD"
