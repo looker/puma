@@ -12,7 +12,7 @@ Gem::Specification.new do |s|
   s.summary = "Puma is a simple, fast, threaded, and highly concurrent HTTP 1.1 server for Ruby/Rack applications"
   s.email = ["evan@phx.io"]
   s.executables = ["puma", "pumactl"]
-  s.extensions = ["ext/puma_http11/extconf.rb"]
+  # s.extensions = ["ext/puma_http11/extconf.rb"]
   s.files = `git ls-files -- bin docs ext lib tools`.split("\n") +
             %w[History.md LICENSE README.md]
   s.homepage = "http://puma.io"
