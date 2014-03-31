@@ -11,3 +11,4 @@ tmp
 .rbx/
 Gemfile.lock
 .idea/
+.DS_Store
