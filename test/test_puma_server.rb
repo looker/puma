@@ -24,38 +24,6 @@ class TestPumaServer < Test::Unit::TestCase
     @server.stop(true)
   end
 
-  def test_url_scheme_for_https
-    ctx = Puma::MiniSSL::Context.new
-
-    if defined?(JRUBY_VERSION)
-      ctx.keystore =  File.expand_path "../../examples/puma/keystore.jks", __FILE__
-      ctx.keystore_pass = 'blahblah'
-    else
-      ctx.key =  File.expand_path "../../examples/puma/puma_keypair.pem", __FILE__
-      ctx.cert = File.expand_path "../../examples/puma/cert_puma.pem", __FILE__
-    end
-
-    ctx.verify_mode = Puma::MiniSSL::VERIFY_NONE
-
-    @server.add_ssl_listener @host, @port, ctx
-    @server.run
-
-    http = Net::HTTP.new @host, @port
-    http.use_ssl = true
-    http.verify_mode = OpenSSL::SSL::VERIFY_NONE
-
-    body = nil
-    http.start do
-      req = Net::HTTP::Get.new "/", {}
-
-      http.request(req) do |rep|
-        body = rep.body
-      end
-    end
-
-    assert_equal "https", body
-  end
-
   def test_proper_stringio_body
     data = nil
 
