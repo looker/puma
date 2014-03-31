@@ -69,7 +69,7 @@ module Puma
 
           return data.bytesize if need == 0
 
-          data = data[need..-1]
+          data = data[wrote..-1]
         end
       end
 
