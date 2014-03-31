@@ -16,3 +16,4 @@ gemfiles/2.1-Gemfile.lock
 /test/test_puma.state
 /test/test_server.sock
 /test/test_control.sock
+.DS_Store
