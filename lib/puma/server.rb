@@ -450,7 +450,7 @@ module Puma
     end
 
     def default_server_port(env)
-      env['HTTP_X_FORWARDED_PROTO'] == 'https' ? PORT_443 : PORT_80
+      env[HTTPS_KEY] || env['HTTP_X_FORWARDED_PROTO'] == 'https' ? PORT_443 : PORT_80
     end
 
     # Given the request +env+ from +client+ and a partial request body
