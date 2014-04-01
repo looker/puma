@@ -81,7 +81,7 @@ public class MiniSSL extends RubyObject {
     }
 
     public void resize(int newCapacity) {
-      ByteBuffer dstTmp = ByteBuffer.allocate(newCapacity + buffer.position());
+      ByteBuffer dstTmp = ByteBuffer.allocate(newCapacity);
       buffer.flip();
       dstTmp.put(buffer);
       buffer = dstTmp;
@@ -189,7 +189,7 @@ public class MiniSSL extends RubyObject {
           log("SSLOp#doRun(): running overflow logic");
           // increase the buffer size to accommodate the overflowing data
           int newSize = Math.max(engine.getSession().getPacketBufferSize(), engine.getSession().getApplicationBufferSize());
-          dst.resize(newSize);
+          dst.resize(newSize + dst.getRawBuffer().position());
           // retry the operation.
           retryOp = true;
           break;
