@@ -41,20 +41,28 @@ public class MiniSSL extends RubyObject {
     eng.defineAnnotatedMethods(MiniSSL.class);
   }
 
-  private SSLEngine  engine;
-
+  /**
+   * Fairly transparent wrapper around {@link java.nio.ByteBuffer} which adds the enhancements we need
+   */
   private static class MiniSSLBuffer {
     ByteBuffer buffer;
 
-    private MiniSSLBuffer(int capacity) {
-      buffer = ByteBuffer.allocate(capacity);
-      buffer.clear();
+    private MiniSSLBuffer(int capacity) { buffer = ByteBuffer.allocate(capacity); }
+    private MiniSSLBuffer(byte[] initialContents) { buffer = ByteBuffer.wrap(initialContents); }
+
+    public void clear() { buffer.clear(); }
+    public void compact() { buffer.compact(); }
+    public void flip() { buffer.flip(); }
+    public boolean hasRemaining() { return buffer.hasRemaining(); }
+    public int position() { return buffer.position(); }
+
+    public ByteBuffer getRawBuffer() {
+      return buffer;
     }
 
-    private MiniSSLBuffer(byte[] initialContents) {
-      buffer = ByteBuffer.wrap(initialContents);
-    }
-
+    /**
+     * Writes bytes to the buffer after ensuring there's room
+     */
     public void put(byte[] bytes) {
       if (buffer.remaining() < bytes.length) {
         resize(buffer.limit() + bytes.length);
@@ -62,23 +70,9 @@ public class MiniSSL extends RubyObject {
       buffer.put(bytes);
     }
 
-    // dm todo try and eliminate calls to this
-    public ByteBuffer getRawBuffer() {
-      return buffer;
-    }
-
-    public void reset() {
-      buffer.clear();
-    }
-
-    public void prepForRead() {
-      buffer.flip();
-    }
-
-    public boolean hasRemaining() {
-      return buffer.hasRemaining();
-    }
-
+    /**
+     * Ensures that newCapacity bytes can be written to this buffer, only re-allocating if necessary
+     */
     public void resize(int newCapacity) {
       if (newCapacity > buffer.capacity()) {
         ByteBuffer dstTmp = ByteBuffer.allocate(newCapacity);
@@ -106,8 +100,12 @@ public class MiniSSL extends RubyObject {
       buffer.clear();
       return new ByteList(bss);
     }
+
+    @Override
+    public String toString() { return buffer.toString(); }
   }
 
+  private SSLEngine  engine;
   private MiniSSLBuffer inboundNetData;
   private MiniSSLBuffer outboundAppData;
   private MiniSSLBuffer outboundNetData;
@@ -146,7 +144,7 @@ public class MiniSSL extends RubyObject {
     SSLSession session = engine.getSession();
     inboundNetData = new MiniSSLBuffer(session.getPacketBufferSize());
     outboundAppData = new MiniSSLBuffer(session.getApplicationBufferSize());
-    outboundAppData.prepForRead();
+    outboundAppData.flip();
     outboundNetData = new MiniSSLBuffer(session.getPacketBufferSize());
 
     return this;
@@ -157,9 +155,9 @@ public class MiniSSL extends RubyObject {
     try {
       byte[] bytes = arg.convertToString().getBytes();
 
-      log("Net Data post pre-inject: " + inboundNetData.getRawBuffer());
+      log("Net Data post pre-inject: " + inboundNetData);
       inboundNetData.put(bytes);
-      log("Net Data post post-inject: " + inboundNetData.getRawBuffer());
+      log("Net Data post post-inject: " + inboundNetData);
 
       log("inject(): " + bytes.length + " encrypted bytes from request");
       return this;
@@ -192,21 +190,21 @@ public class MiniSSL extends RubyObject {
       switch (res.getStatus()) {
         case BUFFER_OVERFLOW:
           log("SSLOp#doRun(): overflow");
-          log("SSLOp#doRun(): dst data at overflow: " + dst.getRawBuffer());
+          log("SSLOp#doRun(): dst data at overflow: " + dst);
           // increase the buffer size to accommodate the overflowing data
           int newSize = Math.max(engine.getSession().getPacketBufferSize(), engine.getSession().getApplicationBufferSize());
-          dst.resize(newSize + dst.getRawBuffer().position());
-          // retry the operation.
+          dst.resize(newSize + dst.position());
+          // retry the operation
           retryOp = true;
           break;
         case BUFFER_UNDERFLOW:
           log("SSLOp#doRun(): underflow");
-          log("SSLOp#doRun(): src data at underflow: " + src.getRawBuffer());
+          log("SSLOp#doRun(): src data at underflow: " + src);
           // need to wait for more data to come in before we retry
           retryOp = false;
           break;
         default:
-          // other cases are OK and CLOSED.
+          // other cases are OK and CLOSED.  We're done here.
           retryOp = false;
       }
     }
@@ -225,19 +223,19 @@ public class MiniSSL extends RubyObject {
   @JRubyMethod
   public IRubyObject read() throws Exception {
     try {
-      inboundNetData.prepForRead();
+      inboundNetData.flip();
 
       if(!inboundNetData.hasRemaining()) {
         return getRuntime().getNil();
       }
 
-      log("read(): inboundNetData prepped for write: " + inboundNetData.getRawBuffer());
+      log("read(): inboundNetData prepped for write: " + inboundNetData);
 
       MiniSSLBuffer inboundAppData = new MiniSSLBuffer(engine.getSession().getApplicationBufferSize());
       SSLEngineResult res = doOp(SSLOperation.UNWRAP, inboundNetData, inboundAppData);
       log("read(): after initial unwrap", engine, res);
 
-      log("Net Data post unwrap: " + inboundNetData.getRawBuffer());
+      log("read(): Net Data post unwrap: " + inboundNetData);
 
       HandshakeStatus handshakeStatus = engine.getHandshakeStatus();
       boolean done = false;
@@ -262,13 +260,13 @@ public class MiniSSL extends RubyObject {
       }
 
       if (inboundNetData.hasRemaining()) {
-        log("Net Data post pre-compact: " + inboundNetData.getRawBuffer());
-        inboundNetData.getRawBuffer().compact();
-        log("Net Data post post-compact: " + inboundNetData.getRawBuffer());
+        log("Net Data post pre-compact: " + inboundNetData);
+        inboundNetData.compact();
+        log("Net Data post post-compact: " + inboundNetData);
       } else {
-        log("Net Data post pre-reset: " + inboundNetData.getRawBuffer());
-        inboundNetData.reset();
-        log("Net Data post post-reset: " + inboundNetData.getRawBuffer());
+        log("Net Data post pre-reset: " + inboundNetData);
+        inboundNetData.clear();
+        log("Net Data post post-reset: " + inboundNetData);
       }
 
       ByteList appDataByteList = inboundAppData.asByteList();
@@ -284,7 +282,7 @@ public class MiniSSL extends RubyObject {
       if (str.asJavaString().getBytes().length < 1000) {
         logPlain(str.asJavaString() + "\n");
       }
-      logPlain(str.asJavaString().getBytes().length + "\n");
+      logPlain("Num bytes: " + str.asJavaString().getBytes().length + "\n");
       log("read(): end dump of request data   <<<<\n");
       return str;
     } catch (Exception e) {
@@ -321,7 +319,7 @@ public class MiniSSL extends RubyObject {
       if (arg.asJavaString().getBytes().length < 1000) {
         logPlain(arg.asJavaString() + "\n");
       }
-      logPlain(arg.asJavaString().getBytes().length + "\n");
+      logPlain("Num bytes: " + arg.asJavaString().getBytes().length + "\n");
       log("write(): end dump of response data   <<<<\n");
 
       byte[] bls = arg.convertToString().getBytes();
@@ -348,7 +346,7 @@ public class MiniSSL extends RubyObject {
         return getRuntime().getNil();
       }
 
-      outboundNetData.reset();
+      outboundNetData.clear();
       SSLEngineResult res = doOp(SSLOperation.WRAP, outboundAppData, outboundNetData);
       log("extract(): bytes consumed: " + res.bytesConsumed() + "\n");
       log("extract(): bytes produced: " + res.bytesProduced() + "\n");
