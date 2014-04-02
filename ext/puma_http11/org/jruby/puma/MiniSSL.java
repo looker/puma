@@ -56,10 +56,13 @@ public class MiniSSL extends RubyObject {
     }
 
     public void put(byte[] bytes) {
-      buffer.limit(bytes.length);
+      if (buffer.remaining() < bytes.length) {
+        resize(buffer.limit() + bytes.length);
+      }
       buffer.put(bytes);
     }
 
+    // dm todo try and eliminate calls to this
     public ByteBuffer getRawBuffer() {
       return buffer;
     }
@@ -76,15 +79,15 @@ public class MiniSSL extends RubyObject {
       return buffer.hasRemaining();
     }
 
-    public int capacity() {
-      return buffer.capacity();
-    }
-
     public void resize(int newCapacity) {
-      ByteBuffer dstTmp = ByteBuffer.allocate(newCapacity);
-      buffer.flip();
-      dstTmp.put(buffer);
-      buffer = dstTmp;
+      if (newCapacity > buffer.capacity()) {
+        ByteBuffer dstTmp = ByteBuffer.allocate(newCapacity);
+        buffer.flip();
+        dstTmp.put(buffer);
+        buffer = dstTmp;
+      } else {
+        buffer.limit(newCapacity);
+      }
     }
 
     /**
@@ -154,7 +157,9 @@ public class MiniSSL extends RubyObject {
     try {
       byte[] bytes = arg.convertToString().getBytes();
 
+      log("Net Data post pre-inject: " + inboundNetData.getRawBuffer());
       inboundNetData.put(bytes);
+      log("Net Data post post-inject: " + inboundNetData.getRawBuffer());
 
       log("inject(): " + bytes.length + " encrypted bytes from request");
       return this;
@@ -186,7 +191,8 @@ public class MiniSSL extends RubyObject {
 
       switch (res.getStatus()) {
         case BUFFER_OVERFLOW:
-          log("SSLOp#doRun(): running overflow logic");
+          log("SSLOp#doRun(): overflow");
+          log("SSLOp#doRun(): dst data at overflow: " + dst.getRawBuffer());
           // increase the buffer size to accommodate the overflowing data
           int newSize = Math.max(engine.getSession().getPacketBufferSize(), engine.getSession().getApplicationBufferSize());
           dst.resize(newSize + dst.getRawBuffer().position());
@@ -194,12 +200,8 @@ public class MiniSSL extends RubyObject {
           retryOp = true;
           break;
         case BUFFER_UNDERFLOW:
-          log("SSLOp#doRun(): running underflow logic");
-          newSize = Math.max(engine.getSession().getPacketBufferSize(), engine.getSession().getApplicationBufferSize());
-          // resize the buffer if needed
-          if (newSize > dst.capacity()) {
-            src.resize(newSize);
-          }
+          log("SSLOp#doRun(): underflow");
+          log("SSLOp#doRun(): src data at underflow: " + src.getRawBuffer());
           // need to wait for more data to come in before we retry
           retryOp = false;
           break;
@@ -259,11 +261,14 @@ public class MiniSSL extends RubyObject {
         handshakeStatus = engine.getHandshakeStatus();
       }
 
-      // dm todo doc.  Also: is limit/capacity check correct?
-      if (inboundNetData.getRawBuffer().limit() == inboundNetData.getRawBuffer().capacity()) {
-        inboundNetData.reset();
-      } else {
+      if (inboundNetData.hasRemaining()) {
+        log("Net Data post pre-compact: " + inboundNetData.getRawBuffer());
         inboundNetData.getRawBuffer().compact();
+        log("Net Data post post-compact: " + inboundNetData.getRawBuffer());
+      } else {
+        log("Net Data post pre-reset: " + inboundNetData.getRawBuffer());
+        inboundNetData.reset();
+        log("Net Data post post-reset: " + inboundNetData.getRawBuffer());
       }
 
       ByteList appDataByteList = inboundAppData.asByteList();
