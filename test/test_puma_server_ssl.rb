@@ -58,29 +58,22 @@ class TestPumaServerSSL < Test::Unit::TestCase
   def test_very_large_return
     giant = "x" * 2056610
 
-    @server.app = proc do |env|
+    @server.app = proc do
       [200, {}, [giant]]
     end
 
     body = nil
     @http.start do
-      req = Net::HTTP::Get.new "/", {}
+      req = Net::HTTP::Get.new "/"
       @http.request(req) do |rep|
         body = rep.body
       end
-
     end
 
     assert_equal giant.bytesize, body.bytesize
   end
 
   def test_form_submit
-
-    @server.app = proc do |env|
-      p env
-      [200, {}, ["Got a form"]]
-    end
-
     body = nil
     @http.start do
       req = Net::HTTP::Post.new '/'
@@ -92,9 +85,7 @@ class TestPumaServerSSL < Test::Unit::TestCase
 
     end
 
-    assert_equal "Got a form", body
+    assert_equal "https", body
   end
-
-  # dm todo char encoding?
 
 end
