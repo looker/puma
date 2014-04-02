@@ -38,6 +38,10 @@ class TestPumaServerSSL < Test::Unit::TestCase
     @http.verify_mode = OpenSSL::SSL::VERIFY_NONE
   end
 
+  def teardown
+    @server.stop(true)
+  end
+
   def test_url_scheme_for_https
     body = nil
     @http.start do
@@ -49,10 +53,6 @@ class TestPumaServerSSL < Test::Unit::TestCase
     end
 
     assert_equal "https", body
-  end
-
-  def teardown
-    @server.stop(true)
   end
 
   def test_very_large_return
@@ -73,5 +73,28 @@ class TestPumaServerSSL < Test::Unit::TestCase
 
     assert_equal giant.bytesize, body.bytesize
   end
+
+  def test_form_submit
+
+    @server.app = proc do |env|
+      p env
+      [200, {}, ["Got a form"]]
+    end
+
+    body = nil
+    @http.start do
+      req = Net::HTTP::Post.new '/'
+      req.set_form_data('a' => '1', 'b' => '2')
+
+      @http.request(req) do |rep|
+        body = rep.body
+      end
+
+    end
+
+    assert_equal "Got a form", body
+  end
+
+  # dm todo char encoding?
 
 end
