@@ -125,17 +125,32 @@ module Puma
           require 'puma/minissl'
 
           ctx = MiniSSL::Context.new
-          unless params['key']
-            @events.error "Please specify the SSL key via 'key='"
+
+          if defined?(JRUBY_VERSION)
+            unless params['keystore']
+              @events.error "Please specify the Java keystore via 'keystore='"
+            end
+
+            ctx.keystore = params['keystore']
+
+            unless params['keystore-pass']
+              @events.error "Please specify the Java keystore password  via 'keystore-pass='"
+            end
+
+            ctx.keystore_pass = params['keystore-pass']
+          else
+            unless params['key']
+              @events.error "Please specify the SSL key via 'key='"
+            end
+
+            ctx.key = params['key']
+
+            unless params['cert']
+              @events.error "Please specify the SSL cert via 'cert='"
+            end
+
+            ctx.cert = params['cert']
           end
-
-          ctx.key = params['key']
-
-          unless params['cert']
-            @events.error "Please specify the SSL cert via 'cert='"
-          end
-
-          ctx.cert = params['cert']
 
           ctx.verify_mode = MiniSSL::VERIFY_NONE
 
