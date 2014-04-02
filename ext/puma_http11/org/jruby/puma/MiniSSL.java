@@ -235,6 +235,8 @@ public class MiniSSL extends RubyObject {
       SSLEngineResult res = doOp(SSLOperation.UNWRAP, inboundNetData, inboundAppData);
       log("read(): after initial unwrap", engine, res);
 
+      log("Net Data post unwrap: " + inboundNetData.getRawBuffer());
+
       HandshakeStatus handshakeStatus = engine.getHandshakeStatus();
       boolean done = false;
       while (!done) {
@@ -257,8 +259,12 @@ public class MiniSSL extends RubyObject {
         handshakeStatus = engine.getHandshakeStatus();
       }
 
-      log("Net Data post unwrap: " + inboundNetData.getRawBuffer());
-      inboundNetData.reset();
+      // dm todo doc.  Also: is limit/capacity check correct?
+      if (inboundNetData.getRawBuffer().limit() == inboundNetData.getRawBuffer().capacity()) {
+        inboundNetData.reset();
+      } else {
+        inboundNetData.getRawBuffer().compact();
+      }
 
       ByteList appDataByteList = inboundAppData.asByteList();
       if (appDataByteList == null) {
