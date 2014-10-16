@@ -1,23 +1,36 @@
 package org.jruby.puma;
 
-import org.jruby.*;
-
+import org.jruby.Ruby;
+import org.jruby.RubyBoolean;
+import org.jruby.RubyClass;
+import org.jruby.RubyModule;
+import org.jruby.RubyObject;
+import org.jruby.RubyString;
 import org.jruby.anno.JRubyMethod;
-
 import org.jruby.runtime.Block;
 import org.jruby.runtime.ObjectAllocator;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.builtin.IRubyObject;
-
 import org.jruby.util.ByteList;
 
-
-import javax.net.ssl.*;
-import javax.net.ssl.SSLEngineResult.*;
-import java.io.*;
-import java.security.*;
-import java.nio.*;
+import javax.net.ssl.KeyManagerFactory;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLEngine;
+import javax.net.ssl.SSLEngineResult;
+import javax.net.ssl.SSLException;
+import javax.net.ssl.SSLSession;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.security.KeyManagementException;
+import java.security.KeyStore;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+import java.security.UnrecoverableKeyException;
 import java.security.cert.CertificateException;
+
+import static javax.net.ssl.SSLEngineResult.Status;
+import static javax.net.ssl.SSLEngineResult.HandshakeStatus;
 
 public class MiniSSL extends RubyObject {
   private static ObjectAllocator ALLOCATOR = new ObjectAllocator() {
@@ -31,7 +44,7 @@ public class MiniSSL extends RubyObject {
 
   public static void createMiniSSL(Ruby runtime) {
     RubyModule mPuma = runtime.defineModule("Puma");
-    RubyModule ssl =   mPuma.defineModuleUnder("MiniSSL");
+    RubyModule ssl = mPuma.defineModuleUnder("MiniSSL");
 
     mPuma.defineClassUnder("SSLError",
                            runtime.getClass("IOError"),
@@ -105,7 +118,7 @@ public class MiniSSL extends RubyObject {
     public String toString() { return buffer.toString(); }
   }
 
-  private SSLEngine  engine;
+  private SSLEngine engine;
   private MiniSSLBuffer inboundNetData;
   private MiniSSLBuffer outboundAppData;
   private MiniSSLBuffer outboundNetData;
@@ -139,6 +152,15 @@ public class MiniSSL extends RubyObject {
 
     sslCtx.init(kmf.getKeyManagers(), null, null);
     engine = sslCtx.createSSLEngine();
+
+    IRubyObject enable_ssLv3 = miniSSLContext.callMethod(threadContext, "enable_SSLv3");
+    String[] protocols;
+    if (enable_ssLv3 instanceof RubyBoolean && enable_ssLv3.isTrue()) {
+      protocols = new String[] { "SSLv2Hello", "SSLv3", "TLSv1", "TLSv1.1", "TLSv1.2" };
+    } else {
+      protocols = new String[] { "TLSv1", "TLSv1.1", "TLSv1.2" };
+    }
+    engine.setEnabledProtocols(protocols);
     engine.setUseClientMode(false);
 
     SSLSession session = engine.getSession();
@@ -229,7 +251,7 @@ public class MiniSSL extends RubyObject {
         return getRuntime().getNil();
       }
 
-      log("read(): inboundNetData prepped for write: " + inboundNetData);
+      log("read(): inboundNetData prepped for read: " + inboundNetData);
 
       MiniSSLBuffer inboundAppData = new MiniSSLBuffer(engine.getSession().getApplicationBufferSize());
       SSLEngineResult res = doOp(SSLOperation.UNWRAP, inboundNetData, inboundAppData);
@@ -362,7 +384,6 @@ public class MiniSSL extends RubyObject {
 
       return str;
     } catch (Exception e) {
-      // dm todo: do we want to disable these at some point?
       e.printStackTrace();
       throw new RuntimeException(e);
     }
