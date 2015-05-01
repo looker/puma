@@ -40,7 +40,7 @@ public class MiniSSL extends RubyObject {
   };
 
   // set to true to switch on our low-fi trace logging
-  private static boolean DEBUG = true;
+  private static boolean DEBUG = false;
 
   public static void createMiniSSL(Ruby runtime) {
     RubyModule mPuma = runtime.defineModule("Puma");
@@ -158,7 +158,7 @@ public class MiniSSL extends RubyObject {
     if (enableSSLv3 instanceof RubyBoolean && enableSSLv3.isTrue()) {
       protocols = new String[] { "SSLv2Hello", "SSLv3", "TLSv1", "TLSv1.1", "TLSv1.2" };
     } else {
-      protocols = new String[] { "TLSv1", "TLSv1.1", "TLSv1.2" };
+      protocols = new String[] { "SSLv2Hello", "TLSv1", "TLSv1.1", "TLSv1.2" };
     }
     engine.setEnabledProtocols(protocols);
     engine.setUseClientMode(false);
