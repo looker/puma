@@ -40,7 +40,7 @@ public class MiniSSL extends RubyObject {
   };
 
   // set to true to switch on our low-fi trace logging
-  private static boolean DEBUG = false;
+  private static boolean DEBUG = true;
 
   public static void createMiniSSL(Ruby runtime) {
     RubyModule mPuma = runtime.defineModule("Puma");
