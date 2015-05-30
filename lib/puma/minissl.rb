@@ -10,6 +10,10 @@ module Puma
         @socket
       end
 
+      def fileno
+        to_io.fileno
+      end
+
       def readpartial(size)
         while true
           output = @engine.read
