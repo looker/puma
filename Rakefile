@@ -8,11 +8,10 @@ Hoe.plugin :git
 Hoe.plugin :ignore
 
 HOE = Hoe.spec "puma" do
-  self.rubyforge_name = 'puma'
   self.readme_file    = "README.md"
   self.urls = %w!http://puma.io https://github.com/puma/puma!
 
-  license "BSD"
+  license "BSD-3-Clause"
   developer 'Evan Phoenix', 'evan@phx.io'
 
   spec_extras[:extensions]  = ["ext/puma_http11/extconf.rb"]
@@ -21,9 +20,9 @@ HOE = Hoe.spec "puma" do
 
   require_ruby_version ">= 1.8.7"
 
-  dependency "rack", [">= 1.1", "< 2.0"]
+  dependency "rack", [">= 1.1", "< 2.0"], :development
 
-  extra_dev_deps << ["rake-compiler", "~> 0.8.0"]
+  extra_dev_deps << ["rake-compiler", "~> 0.8"]
 end
 
 task :prerelease => [:clobber, :check_manifest, :test]

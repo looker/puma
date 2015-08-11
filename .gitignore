@@ -8,7 +8,11 @@ doc
 log
 pkg
 tmp
+t/
 .rbx/
 Gemfile.lock
 .idea/
 .DS_Store
+/test/test_puma.state
+/test/test_server.sock
+/test/test_control.sock

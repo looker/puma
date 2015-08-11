@@ -39,6 +39,7 @@ module Puma
 
       @body = nil
       @buffer = nil
+      @tempfile = nil
 
       @timeout_at = nil
 
@@ -46,7 +47,8 @@ module Puma
       @hijacked = false
     end
 
-    attr_reader :env, :to_io, :body, :io, :timeout_at, :ready, :hijacked
+    attr_reader :env, :to_io, :body, :io, :timeout_at, :ready, :hijacked,
+                :tempfile
 
     def inspect
       "#<Puma::Client:0x#{object_id.to_s(16)} @ready=#{@ready.inspect}>"
@@ -72,6 +74,7 @@ module Puma
       @read_header = true
       @env = @proto_env.dup
       @body = nil
+      @tempfile = nil
       @parsed_bytes = 0
       @ready = false
 
@@ -129,6 +132,7 @@ module Puma
       if remain > MAX_BODY
         @body = Tempfile.new(Const::PUMA_TMP_BASE)
         @body.binmode
+        @tempfile = @body
       else
         # The body[0,0] trick is to get an empty string in the same
         # encoding as body.
@@ -221,6 +225,14 @@ module Puma
         try_to_finish
       end
     end # IS_JRUBY
+
+    def finish
+      return true if @ready
+      until try_to_finish
+        IO.select([@to_io], nil, nil)
+      end
+      true
+    end
 
     def read_body
       # Read an odd sized chunk so we can read even sized ones

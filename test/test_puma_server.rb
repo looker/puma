@@ -191,7 +191,7 @@ class TestPumaServer < Test::Unit::TestCase
   def test_prints_custom_error
     @events = Puma::Events.strings
     re = lambda { |err| [302, {'Content-Type' => 'text', 'Location' => 'foo.html'}, ['302 found']] }
-    @server = Puma::Server.new @app, @events, {lowlevel_error_handler: re}
+    @server = Puma::Server.new @app, @events, {:lowlevel_error_handler => re}
 
     @server.app = proc { |e| raise "don't leak me bro" }
     @server.add_tcp_listener @host, @port
@@ -216,7 +216,7 @@ class TestPumaServer < Test::Unit::TestCase
 
     data = sock.read
 
-    assert_equal "HTTP/1.0 449 CUSTOM\r\nConnection: close\r\nContent-Length: 0\r\n\r\n", data
+    assert_equal "HTTP/1.0 449 CUSTOM\r\nContent-Length: 0\r\n\r\n", data
   end
 
   def test_custom_http_codes_11
@@ -286,40 +286,138 @@ class TestPumaServer < Test::Unit::TestCase
     assert_equal "HTTP/1.1 408 Request Timeout\r\n", data
   end
 
-  def test_respect_x_forwarded_proto
-    @server.app = proc do |env|
-      [200, {}, [env['SERVER_PORT']]]
-    end
+  def test_http_11_keep_alive_with_body
+    @server.app = proc { |env| [200, {"Content-Type" => "plain/text"}, ["hello"]] }
 
     @server.add_tcp_listener @host, @port
     @server.run
 
-    req = Net::HTTP::Get.new("/")
-    req['HOST'] = "example.com"
-    req['X_FORWARDED_PROTO'] = "https"
+    sock = TCPSocket.new @host, @port
+    sock << "GET / HTTP/1.1\r\nConnection: Keep-Alive\r\n\r\n"
 
-    res = Net::HTTP.start @host, @port do |http|
-      http.request(req)
-    end
+    data = sock.read
 
-    assert_equal "443", res.body
+    assert_equal "HTTP/1.1 200 OK\r\nContent-Type: plain/text\r\nContent-Length: 5\r\n\r\nhello", data
   end
 
-  def test_default_server_port
-    @server.app = proc do |env|
-      [200, {}, [env['SERVER_PORT']]]
+  def test_http_11_close_with_body
+    @server.app = proc { |env| [200, {"Content-Type" => "plain/text"}, ["hello"]] }
+
+    @server.add_tcp_listener @host, @port
+    @server.run
+
+    sock = TCPSocket.new @host, @port
+    sock << "GET / HTTP/1.1\r\nConnection: close\r\n\r\n"
+
+    data = sock.read
+
+    assert_equal "HTTP/1.1 200 OK\r\nContent-Type: plain/text\r\nConnection: close\r\nContent-Length: 5\r\n\r\nhello", data
+  end
+
+  def test_http_11_keep_alive_without_body
+    @server.app = proc { |env| [204, {}, []] }
+
+    @server.add_tcp_listener @host, @port
+    @server.run
+
+    sock = TCPSocket.new @host, @port
+    sock << "GET / HTTP/1.1\r\nConnection: Keep-Alive\r\n\r\n"
+
+    data = sock.read
+
+    assert_equal "HTTP/1.1 204 No Content\r\n\r\n", data
+  end
+
+  def test_http_11_close_without_body
+    @server.app = proc { |env| [204, {}, []] }
+
+    @server.add_tcp_listener @host, @port
+    @server.run
+
+    sock = TCPSocket.new @host, @port
+    sock << "GET / HTTP/1.1\r\nConnection: close\r\n\r\n"
+
+    data = sock.read
+
+    assert_equal "HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n", data
+  end
+
+  def test_http_10_keep_alive_with_body
+    @server.app = proc { |env| [200, {"Content-Type" => "plain/text"}, ["hello"]] }
+
+    @server.add_tcp_listener @host, @port
+    @server.run
+
+    sock = TCPSocket.new @host, @port
+    sock << "GET / HTTP/1.0\r\nConnection: Keep-Alive\r\n\r\n"
+
+    data = sock.read
+
+    assert_equal "HTTP/1.0 200 OK\r\nContent-Type: plain/text\r\nConnection: Keep-Alive\r\nContent-Length: 5\r\n\r\nhello", data
+  end
+
+  def test_http_10_close_with_body
+    @server.app = proc { |env| [200, {"Content-Type" => "plain/text"}, ["hello"]] }
+
+    @server.add_tcp_listener @host, @port
+    @server.run
+
+    sock = TCPSocket.new @host, @port
+    sock << "GET / HTTP/1.0\r\nConnection: close\r\n\r\n"
+
+    data = sock.read
+
+    assert_equal "HTTP/1.0 200 OK\r\nContent-Type: plain/text\r\nContent-Length: 5\r\n\r\nhello", data
+  end
+  
+  def test_http_10_partial_hijack_with_content_length
+    body_parts = ['abc', 'de']
+    
+    @server.app = proc do |env| 
+      hijack_lambda = proc do | io |
+        io.write(body_parts[0])
+        io.write(body_parts[1])
+        io.close
+      end
+      [200, {"Content-Length" => "5", 'rack.hijack' => hijack_lambda}, nil]
     end
 
     @server.add_tcp_listener @host, @port
     @server.run
 
-    req = Net::HTTP::Get.new("/")
-    req['HOST'] = "example.com"
+    sock = TCPSocket.new @host, @port
+    sock << "GET / HTTP/1.0\r\nConnection: close\r\n\r\n"
 
-    res = Net::HTTP.start @host, @port do |http|
-      http.request(req)
-    end
+    data = sock.read
 
-    assert_equal "80", res.body
+    assert_equal "HTTP/1.0 200 OK\r\nContent-Length: 5\r\n\r\nabcde", data
+  end
+  
+  def test_http_10_keep_alive_without_body
+    @server.app = proc { |env| [204, {}, []] }
+
+    @server.add_tcp_listener @host, @port
+    @server.run
+
+    sock = TCPSocket.new @host, @port
+    sock << "GET / HTTP/1.0\r\nConnection: Keep-Alive\r\n\r\n"
+
+    data = sock.read
+
+    assert_equal "HTTP/1.0 204 No Content\r\nConnection: Keep-Alive\r\n\r\n", data
+  end
+
+  def test_http_10_close_without_body
+    @server.app = proc { |env| [204, {}, []] }
+
+    @server.add_tcp_listener @host, @port
+    @server.run
+
+    sock = TCPSocket.new @host, @port
+    sock << "GET / HTTP/1.0\r\nConnection: close\r\n\r\n"
+
+    data = sock.read
+
+    assert_equal "HTTP/1.0 204 No Content\r\n\r\n", data
   end
 end

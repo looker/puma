@@ -1,6 +1,6 @@
 # Puma: A Ruby Web Server Built For Concurrency
 
-[![Build Status](https://secure.travis-ci.org/puma/puma.png)](http://travis-ci.org/puma/puma) [![Dependency Status](https://gemnasium.com/puma/puma.png)](https://gemnasium.com/puma/puma) <a href="https://codeclimate.com/github/puma/puma"><img src="https://codeclimate.com/github/puma/puma.png" /></a>
+[![Gitter](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/puma/puma?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge) [![Build Status](https://secure.travis-ci.org/puma/puma.png)](http://travis-ci.org/puma/puma) [![Dependency Status](https://gemnasium.com/puma/puma.png)](https://gemnasium.com/puma/puma) <a href="https://codeclimate.com/github/puma/puma"><img src="https://codeclimate.com/github/puma/puma.png" /></a>
 
 ## Description
 
@@ -117,6 +117,24 @@ If you're preloading your application and using ActiveRecord, it's recommend you
       end
     end
 
+When you use preload_app, your new code goes all in the master process, and is then copied in the workers (meaning it’s only compatible with cluster mode). General rule is to use preload_app when your workers die often and need fast starts. If you don’t have many workers, you probably should not use preload_app.
+
+Note that preload_app can’t be used with phased restart, since phased restart kills and restarts workers one-by-one, and preload_app is all about copying the code of master into the workers.
+
+### Error handler for low-level errors
+
+If puma encounters an error outside of the context of your application, it will respond with a 500 and a simple
+textual error message (see `lowlevel_error` in [this file](https://github.com/puma/puma/blob/master/lib/puma/server.rb)).
+You can specify custom behavior for this scenario. For example, you can report the error to your third-party
+error-tracking service (in this example, [rollbar](http://rollbar.com)):
+
+```ruby
+lowlevel_error_handler do |e|
+  Rollbar.critical(e)
+  [500, {}, ["An error has occurred, and engineers have been informed. Please reload the page. If you continue to have problems, contact support@example.com\n"]]
+end
+```
+
 ### Binding TCP / Sockets
 
 In contrast to many other server configs which require multiple flags, Puma simply uses one URI parameter with the `-b` (or `--bind`) flag:
@@ -129,7 +147,7 @@ Want to use UNIX Sockets instead of TCP (which can provide a 5-10% performance b
 
 If you need to change the permissions of the UNIX socket, just add a umask parameter:
 
-    $ puma -b 'unix:///var/run/puma.sock?umask=0777'
+    $ puma -b 'unix:///var/run/puma.sock?umask=0111'
 
 Need a bit of security? Use SSL sockets!
 
@@ -170,6 +188,19 @@ No code is shared between the current and restarted process, so it should be saf
 
 If the new process is unable to load, it will simply exit. You should therefore run Puma under a supervisor when using it in production.
 
+### Normal vs Hot vs Phased Restart
+
+A hot restart means that no requests while deploying your new code will be lost, since the server socket is kept open between restarts.
+
+But beware, hot restart does not mean that the incoming requests won’t hang for multiple seconds while your new code has not fully deployed. If you need a zero downtime and zero hanging requests deploy, you must use phased restart.
+
+When you run pumactl phased-restart, Puma kills workers one-by-one, meaning that at least another worker is still available to serve requests, which lead in zero hanging request (yay!).
+
+But again beware, upgrading an application sometimes involves upgrading the database schema. With phased restart, there may be a moment during the deployment where processes belonging to the previous version and processes belonging to the new version both exist at the same time. Any database schema upgrades you perform must therefore be backwards-compatible with the old application version.
+
+if you perform a lot of database migrations, you probably should not use phased restart and use a normal/hot restart instead (pumactl restart). That way, no code is shared while deploying (in that case, preload_app might help for quicker deployment, see below).
+
+
 ### Cleanup Code
 
 Puma isn't able to understand all the resources that your app may use, so it provides a hook in the configuration file you pass to `-C` called `on_restart`. The block passed to `on_restart` will be called, unsurprisingly, just before Puma restarts itself.
@@ -194,12 +225,21 @@ If you want an easy way to manage multiple scripts at once check [tools/jungle](
 
 ## Capistrano deployment
 
-Puma has included Capistrano [deploy script](https://github.com/puma/puma/blob/master/lib/puma/capistrano.rb), you just need require that:
-
-config/deploy.rb
+Puma has support for Capistrano3 with an [external gem](https://github.com/seuros/capistrano-puma), you just need require that in Gemfile:
 
 ```ruby
-require 'puma/capistrano'
+gem 'capistrano3-puma'
+```
+And then execute:
+
+```bash
+bundle
+```
+
+Then add to Capfile
+
+```ruby
+require 'capistrano/puma'
 ```
 
 and then
@@ -222,4 +262,4 @@ $ bundle exec rake
 
 ## License
 
-Puma is copyright 2013 Evan Phoenix and contributors. It is licensed under the BSD license. See the include LICENSE file for details.
+Puma is copyright 2014 Evan Phoenix and contributors. It is licensed under the BSD 3-Clause license. See the include LICENSE file for details.

@@ -1,4 +1,5 @@
 require 'puma/util'
+require 'puma/minissl'
 
 module Puma
   class Reactor
@@ -73,6 +74,17 @@ module Puma
                   @app_pool << c
                   sockets.delete c
                 end
+
+              # SSL handshake failure
+              rescue MiniSSL::SSLError => e
+                ssl_socket = c.io
+                addr = ssl_socket.peeraddr.last
+                cert = ssl_socket.peercert
+
+                c.close
+                sockets.delete c
+
+                @events.ssl_error @server, addr, cert, e
 
               # The client doesn't know HTTP well
               rescue HttpParserError => e

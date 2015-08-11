@@ -1,4 +1,3 @@
-require 'rack'
 require 'stringio'
 
 require 'puma/thread_pool'
@@ -12,8 +11,6 @@ require 'puma/binder'
 require 'puma/delegation'
 require 'puma/accept_nonblock'
 require 'puma/util'
-
-require 'puma/rack_patch'
 
 require 'puma/puma_http11'
 
@@ -39,6 +36,7 @@ module Puma
     attr_accessor :max_threads
     attr_accessor :persistent_timeout
     attr_accessor :auto_trim_time
+    attr_accessor :reaping_time
     attr_accessor :first_data_timeout
 
     # Create a server for the rack app +app+.
@@ -60,6 +58,7 @@ module Puma
       @min_threads = 0
       @max_threads = 16
       @auto_trim_time = 1
+      @reaping_time = 1
 
       @thread = nil
       @thread_pool = nil
@@ -74,6 +73,7 @@ module Puma
       @leak_stack_on_error = true
 
       @options = options
+      @queue_requests = options[:queue_requests].nil? ? true : options[:queue_requests]
 
       ENV['RACK_ENV'] ||= "development"
 
@@ -185,16 +185,17 @@ module Puma
               else
                 begin
                   if io = sock.accept_nonblock
-                    c = Client.new io, nil
-                    pool << c
+                    client = Client.new io, nil
+                    pool << client
                   end
                 rescue SystemCallError
+                  # nothing
+                rescue Errno::ECONNABORTED
+                  # client closed the socket even before accept
+                  io.close rescue nil
                 end
               end
             end
-          rescue Errno::ECONNABORTED
-            # client closed the socket even before accept
-            client.close rescue nil
           rescue Object => e
             @events.unknown_error self, e, "Listen loop"
           end
@@ -235,13 +236,28 @@ module Puma
         return run_lopez_mode(background)
       end
 
+      queue_requests = @queue_requests
+
       @thread_pool = ThreadPool.new(@min_threads,
                                     @max_threads,
                                     IOBuffer) do |client, buffer|
         process_now = false
 
         begin
-          process_now = client.eagerly_finish
+          if queue_requests
+            process_now = client.eagerly_finish
+          else
+            client.finish
+            process_now = true
+          end
+        rescue MiniSSL::SSLError => e
+          ssl_socket = client.io
+          addr = ssl_socket.peeraddr.last
+          cert = ssl_socket.peercert
+
+          client.close
+
+          @events.ssl_error self, addr, cert, e
         rescue HttpParserError => e
           client.write_400
           client.close
@@ -259,9 +275,16 @@ module Puma
         end
       end
 
-      @reactor = Reactor.new self, @thread_pool
+      @thread_pool.clean_thread_locals = @options[:clean_thread_locals]
 
-      @reactor.run_in_thread
+      if queue_requests
+        @reactor = Reactor.new self, @thread_pool
+        @reactor.run_in_thread
+      end
+
+      if @reaping_time
+        @thread_pool.auto_reap!(@reaping_time)
+      end
 
       if @auto_trim_time
         @thread_pool.auto_trim!(@auto_trim_time)
@@ -282,6 +305,7 @@ module Puma
         check = @check
         sockets = [check] + @binder.ios
         pool = @thread_pool
+        queue_requests = @queue_requests
 
         while @status == :run
           begin
@@ -292,16 +316,18 @@ module Puma
               else
                 begin
                   if io = sock.accept_nonblock
-                    c = Client.new io, @binder.env(sock)
-                    pool << c
+                    client = Client.new io, @binder.env(sock)
+                    pool << client
+                    pool.wait_until_not_full unless queue_requests
                   end
                 rescue SystemCallError
+                  # nothing
+                rescue Errno::ECONNABORTED
+                  # client closed the socket even before accept
+                  io.close rescue nil
                 end
               end
             end
-          rescue Errno::ECONNABORTED
-            # client closed the socket even before accept
-            client.close rescue nil
           rescue Object => e
             @events.unknown_error self, e, "Listen loop"
           end
@@ -310,9 +336,10 @@ module Puma
         @events.fire :state, @status
 
         graceful_shutdown if @status == :stop || @status == :restart
-        @reactor.clear! if @status == :restart
-
-        @reactor.shutdown
+        if queue_requests
+          @reactor.clear! if @status == :restart
+          @reactor.shutdown
+        end
       rescue Exception => e
         STDERR.puts "Exception handling servers: #{e.message} (#{e.class})"
         STDERR.puts e.backtrace
@@ -365,6 +392,7 @@ module Puma
             close_socket = false
             return
           when true
+            return unless @queue_requests
             buffer.reset
 
             unless client.reset(@status == :run)
@@ -379,6 +407,16 @@ module Puma
       # The client disconnected while we were reading data
       rescue ConnectionError
         # Swallow them. The ensure tries to close +client+ down
+
+      # SSL handshake error
+      rescue MiniSSL::SSLError => e
+        ssl_socket = client.io
+        addr = ssl_socket.peeraddr.last
+        cert = ssl_socket.peercert
+
+        close_socket = true
+
+        @events.ssl_error self, addr, cert, e
 
       # The client doesn't know HTTP well
       rescue HttpParserError => e
@@ -441,16 +479,25 @@ module Puma
       # intermediary acting on behalf of the actual source client."
       #
 
-      addr = client.peeraddr.last
+      unless env.key?(REMOTE_ADDR)
+        begin
+          addr = client.peeraddr.last
+        rescue Errno::ENOTCONN
+          # Client disconnects can result in an inability to get the
+          # peeraddr from the socket; default to localhost.
+          addr = LOCALHOST_IP
+        end
 
-      # Set unix socket addrs to localhost
-      addr = "127.0.0.1" if addr.empty?
+        # Set unix socket addrs to localhost
+        addr = LOCALHOST_IP if addr.empty?
 
-      env[REMOTE_ADDR] = addr
+        env[REMOTE_ADDR] = addr
+      end
     end
 
     def default_server_port(env)
-      env[HTTPS_KEY] || env['HTTP_X_FORWARDED_PROTO'] == 'https' ? PORT_443 : PORT_80
+      return PORT_443 if env[HTTPS_KEY] == 'on' || env[HTTPS_KEY] == 'https'
+      env['HTTP_X_FORWARDED_PROTO'] == 'https' ? PORT_443 : PORT_80
     end
 
     # Given the request +env+ from +client+ and a partial request body
@@ -469,6 +516,10 @@ module Puma
       normalize_env env, client
 
       env[PUMA_SOCKET] = client
+
+      if env[HTTPS_KEY] && client.peercert
+        env[PUMA_PEERCERT] = client.peercert
+      end
 
       env[HIJACK_P] = true
       env[HIJACK] = req
@@ -518,7 +569,7 @@ module Puma
         line_ending = LINE_END
         colon = COLON
 
-        if env[HTTP_VERSION] == HTTP_11
+        http_11 = if env[HTTP_VERSION] == HTTP_11
           allow_chunked = true
           keep_alive = env[HTTP_CONNECTION] != CLOSE
           include_keepalive_header = false
@@ -535,6 +586,7 @@ module Puma
 
             no_body ||= status < 200 || STATUS_WITH_NO_ENTITY_BODY[status]
           end
+          true
         else
           allow_chunked = false
           keep_alive = env[HTTP_CONNECTION] == KEEP_ALIVE
@@ -550,6 +602,7 @@ module Puma
 
             no_body ||= status < 200 || STATUS_WITH_NO_ENTITY_BODY[status]
           end
+          false
         end
 
         response_hijack = nil
@@ -576,6 +629,12 @@ module Puma
           end
         end
 
+        if include_keepalive_header
+          lines << CONNECTION_KEEP_ALIVE
+        elsif http_11 && !keep_alive
+          lines << CONNECTION_CLOSE
+        end
+
         if no_body
           if content_length and status != 204
             lines.append CONTENT_LENGTH_S, content_length.to_s, line_ending
@@ -585,21 +644,13 @@ module Puma
           fast_write client, lines.to_s
           return keep_alive
         end
-
-        if include_keepalive_header
-          lines << CONNECTION_KEEP_ALIVE
-        elsif !keep_alive
-          lines << CONNECTION_CLOSE
-        end
-
-        unless response_hijack
-          if content_length
-            lines.append CONTENT_LENGTH_S, content_length.to_s, line_ending
-            chunked = false
-          elsif allow_chunked
-            lines << TRANSFER_ENCODING_CHUNKED
-            chunked = true
-          end
+        
+        if content_length
+          lines.append CONTENT_LENGTH_S, content_length.to_s, line_ending
+          chunked = false
+        elsif !response_hijack and allow_chunked
+          lines << TRANSFER_ENCODING_CHUNKED
+          chunked = true
         end
 
         lines << line_ending
@@ -614,10 +665,11 @@ module Puma
         begin
           res_body.each do |part|
             if chunked
-              client.syswrite part.bytesize.to_s(16)
-              client.syswrite line_ending
+              next if part.bytesize.zero?
+              fast_write client, part.bytesize.to_s(16)
+              fast_write client, line_ending
               fast_write client, part
-              client.syswrite line_ending
+              fast_write client, line_ending
             else
               fast_write client, part
             end
@@ -626,7 +678,7 @@ module Puma
           end
 
           if chunked
-            client.syswrite CLOSE_CHUNKED
+            fast_write client, CLOSE_CHUNKED
             client.flush
           end
         rescue SystemCallError, IOError
@@ -637,6 +689,7 @@ module Puma
         uncork_socket client
 
         body.close
+        req.tempfile.unlink if req.tempfile
         res_body.close if res_body.respond_to? :close
 
         after_reply.each { |o| o.call }
@@ -714,13 +767,28 @@ module Puma
       if @leak_stack_on_error
         [500, {}, ["Puma caught this error: #{e.message} (#{e.class})\n#{e.backtrace.join("\n")}"]]
       else
-        [500, {}, ["A really lowlevel plumbing error occured. Please contact your local Maytag(tm) repair man.\n"]]
+        [500, {}, ["An unhandled lowlevel error occurred. The application logs may have details.\n"]]
       end
     end
 
     # Wait for all outstanding requests to finish.
     #
     def graceful_shutdown
+      if @options[:shutdown_debug]
+        threads = Thread.list
+        total = threads.size
+
+        pid = Process.pid
+
+        $stdout.syswrite "#{pid}: === Begin thread backtrace dump ===\n"
+
+        threads.each_with_index do |t,i|
+          $stdout.syswrite "#{pid}: Thread #{i+1}/#{total}: #{t.inspect}\n"
+          $stdout.syswrite "#{pid}: #{t.backtrace.join("\n#{pid}: ")}\n\n"
+        end
+        $stdout.syswrite "#{pid}: === End thread backtrace dump ===\n"
+      end
+
       if @options[:drain_on_shutdown]
         count = 0
 
@@ -732,8 +800,8 @@ module Puma
             begin
               if io = sock.accept_nonblock
                 count += 1
-                c = Client.new io, @binder.env(sock)
-                @thread_pool << c
+                client = Client.new io, @binder.env(sock)
+                @thread_pool << client
               end
             rescue SystemCallError
             end

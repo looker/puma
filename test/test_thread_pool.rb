@@ -153,4 +153,77 @@ class TestThreadPool < Test::Unit::TestCase
 
     assert_equal 1, pool.spawned
   end
+
+  def test_cleanliness
+    values = []
+    n = 100
+    mutex = Mutex.new
+
+    finished = false
+
+    pool = new_pool(1,1) {
+      mutex.synchronize { values.push Thread.current[:foo] }
+      Thread.current[:foo] = :hai
+      Thread.pass until finished
+    }
+
+    pool.clean_thread_locals = true
+
+    n.times { pool << 1 }
+
+    finished = true
+
+    pause
+
+    assert_equal n,  values.length
+
+    assert_equal [], values.compact
+  end
+
+  def test_reap_only_dead_threads
+    pool = new_pool(2,2) { Thread.current.kill }
+
+    assert_equal 2, pool.spawned
+
+    pool << 1
+
+    pause
+
+    assert_equal 2, pool.spawned
+
+    pool.reap
+
+    assert_equal 1, pool.spawned
+
+    pool << 2
+
+    pause
+
+    assert_equal 1, pool.spawned
+
+    pool.reap
+
+    assert_equal 0, pool.spawned
+  end
+
+  def test_auto_reap_dead_threads
+    pool = new_pool(2,2) { Thread.current.kill }
+
+    assert_equal 2, pool.spawned
+
+    pool << 1
+    pool << 2
+
+    pause
+
+    assert_equal 2, pool.spawned
+
+    pool.auto_reap! 1
+
+    sleep 1
+
+    pause
+
+    assert_equal 0, pool.spawned
+  end
 end

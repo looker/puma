@@ -1,3 +1,299 @@
+=== 2.12.3 / 2015-08-03
+
+* 8 minor bugs fixed:
+  * Fix Capistrano 'uninitialized constant Puma' error.
+  * Fix some ancient and incorrect error handling code
+  * Fix uninitialized constant error
+  * Remove toplevel rack interspection, require rack on load instead
+  * Skip empty parts when chunking
+  * Switch from inject to each in config_ru_binds iteration
+  * Wrap SSLv3 spec in version guard.
+  * ruby 1.8.7 compatibility patches
+
+* 4 PRs merged:
+  * Merge pull request #742 from deivid-rodriguez/fix_missing_require
+  * Merge pull request #743 from matthewd/skip-empty-chunks
+  * Merge pull request #749 from huacnlee/fix-cap-uninitialized-puma-error
+  * Merge pull request #751 from costi/compat_1_8_7
+
+* 1 test fix:
+  * Add 1.8.7, rbx-1 (allow failures) to Travis.
+
+=== 2.12.2 / 2015-07-17
+
+* 2 bug fix:
+  * Pull over and use Rack::URLMap. Fixes #741
+  * Stub out peercert on JRuby for now. Fixes #739
+
+=== 2.12.1 / 2015-07-16
+
+* 2 bug fixes:
+  * Use a constant format. Fixes #737
+  * Use strerror for Windows sake. Fixes #733
+
+* 1 doc change:
+  * typo fix: occured -> occurred
+
+* 1 PR merged:
+  * Merge pull request #736 from paulanunda/paulanunda/typo-fix
+
+=== 2.12.0 / 2015-07-14
+
+* 13 bug fixes:
+  * Add thread reaping to thread pool
+  * Do not automatically use chunked responses when hijacked
+  * Do not suppress Content-Length on partial hijack
+  * Don't allow any exceptions to terminate a thread
+  * Handle ENOTCONN client disconnects when setting REMOTE_ADDR
+  * Handle very early exit of cluster mode. Fixes #722
+  * Install rack when running tests on travis to use rack/lint
+  * Make puma -v and -h return success exit code
+  * Make pumactl load config/puma.rb by default
+  * Pass options from pumactl properly when pruning. Fixes #694
+  * Remove rack dependency. Fixes #705
+  * Remove the default Content-Type: text/plain
+  * Add Client Side Certificate Auth
+
+* 8 doc/test changes:
+  * Added example sourcing of environment vars
+  * Added tests for bind configuration on rackup file
+  * Fix example config text
+  * Update DEPLOYMENT.md
+  * Update Readme with example of custom error handler
+  * ci: Improve Travis settings
+  * ci: Start running tests against JRuby 9k on Travis
+  * ci: Convert to container infrastructure for travisci
+
+* 2 ops changes:
+  * Check for system-wide rbenv
+  * capistrano: Add additional env when start rails
+
+* 16 PRs merged:
+  * Merge pull request #686 from jjb/patch-2
+  * Merge pull request #693 from rob-murray/update-example-config
+  * Merge pull request #697 from spk/tests-bind-on-rackup-file
+  * Merge pull request #699 from deees/fix/require_rack_builder
+  * Merge pull request #701 from deepj/master
+  * Merge pull request #702 from Jimdo/thread-reaping
+  * Merge pull request #703 from deepj/travis
+  * Merge pull request #704 from grega/master
+  * Merge pull request #709 from lian/master
+  * Merge pull request #711 from julik/master
+  * Merge pull request #712 from yakara-ltd/pumactl-default-config
+  * Merge pull request #715 from RobotJiang/master
+  * Merge pull request #725 from rwz/master
+  * Merge pull request #726 from strenuus/handle-client-disconnect
+  * Merge pull request #729 from allaire/patch-1
+  * Merge pull request #730 from iamjarvo/container-infrastructure
+
+=== 2.11.3 / 2015-05-18
+
+* 5 bug fixes:
+  * Be sure to unlink tempfiles after a request. Fixes #690
+  * Coerce the key to a string before checking. (thar be symbols). Fixes #684
+  * Fix hang on bad SSL handshake
+  * Remove `enable_SSLv3` support from JRuby
+
+* 1 PR merged:
+  * Merge pull request #698 from looker/hang-handshake
+
+=== 2.11.2 / 2015-04-11
+
+* 2 minor features:
+  * Add `on_worker_fork` hook, which allows to mimic Unicorn's behavior
+  * Add shutdown_debug config option
+
+* 4 bug fixes:
+  * Fix the Config constants not being available in the DSL. Fixes #683
+  * Ignore multiple port declarations
+  * Proper 'Connection' header handling compatible with HTTP 1.[01] protocols
+  * Use "Puma" instead of "puma" to reporting to New Relic
+
+* 1 doc fixes:
+  * Add Gitter badge.
+
+* 6 PRs merged:
+  * Merge pull request #657 from schneems/schneems/puma-once-port
+  * Merge pull request #658 from Tomohiro/newrelic-dispatcher-default-update
+  * Merge pull request #662 from basecrm/connection-compatibility
+  * Merge pull request #664 from fxposter/on-worker-fork
+  * Merge pull request #667 from JuanitoFatas/doc/gemspec
+  * Merge pull request #672 from chulkilee/refactor
+
+=== 2.11.1 / 2015-02-11
+
+* 2 bug fixes:
+  * Avoid crash in strange restart conditions
+  * Inject the GEM_HOME that bundler into puma-wild's env. Fixes #653
+
+* 2 PRs merged:
+  * Merge pull request #644 from bpaquet/master
+  * Merge pull request #646 from mkonecny/master
+
+=== 2.11.0 / 2015-01-20
+
+* 9 bug fixes:
+  * Add mode as an additional bind option to unix sockets. Fixes #630
+  * Advertise HTTPS properly after a hot restart
+  * Don't write lowlevel_error_handler to state
+  * Fix phased restart with stuck requests
+  * Handle spaces in the path properly. Fixes #622
+  * Set a default REMOTE_ADDR to avoid using peeraddr on unix sockets. Fixes #583
+  * Skip device number checking on jruby. Fixes #586
+  * Update extconf.rb to compile correctly on OS X
+  * redirect io right after daemonizing so startup errors are shown. Fixes #359
+
+* 6 minor features:
+  * Add a configuration option that prevents puma from queueing requests.
+  * Add reload_worker_directory
+  * Add the ability to pass environment variables to the init script (for Jungle).
+  * Add the proctitle tag to the worker. Fixes #633
+  * Infer a proctitle tag based on the directory
+  * Update lowlevel error message to be more meaningful.
+
+* 10 PRs merged:
+  * Merge pull request #478 from rubencaro/master
+  * Merge pull request #610 from kwilczynski/master
+  * Merge pull request #611 from jasonl/better-lowlevel-message
+  * Merge pull request #616 from jc00ke/master
+  * Merge pull request #623 from raldred/patch-1
+  * Merge pull request #628 from rdpoor/master
+  * Merge pull request #634 from deepj/master
+  * Merge pull request #637 from raskhadafi/patch-1
+  * Merge pull request #639 from ebeigarts/fix-phased-restarts
+  * Merge pull request #640 from codehotter/issue-612-dependent-requests-deadlock
+
+=== 2.10.2 / 2014-11-26
+
+* 1 bug fix:
+  * Conditionalize thread local cleaning, fixes perf degradation fix
+    The code to clean out all Thread locals adds pretty significant
+    overhead to a each request, so it has to be turned on explicitly
+    if a user needs it.
+
+=== 2.10.1 / 2014-11-24
+
+* 1 bug fix:
+  * Load the app after daemonizing because the app might start threads.
+
+  This change means errors loading the app are now reported only in the redirected
+  stdout/stderr.
+
+  If you're app has problems starting up, start it without daemon mode initially
+  to test.
+
+=== 2.10.0 / 2014-11-23
+
+* 3 minor features:
+  * Added on_worker_shutdown hook mechanism
+  * Allow binding to ipv6 addresses for ssl URIs
+  * Warn about any threads started during app preload
+
+* 5 bug fixes:
+  * Clean out a threads local data before doing work
+  * Disable SSLv3. Fixes #591
+  * First change the directory to use the correct Gemfile.
+  * Only use config.ru binds if specified. Fixes #606
+  * Strongish cipher suite with FS support for some browsers
+
+* 2 doc changes:
+  * Change umask examples to more permissive values
+  * fix typo in README.md
+
+* 9 Merged PRs:
+  * Merge pull request #560 from raskhadafi/prune_bundler-bug
+  * Merge pull request #566 from sheltond/master
+  * Merge pull request #593 from andruby/patch-1
+  * Merge pull request #594 from hassox/thread-cleanliness
+  * Merge pull request #596 from burningTyger/patch-1
+  * Merge pull request #601 from sorentwo/friendly-umask
+  * Merge pull request #602 from 1334/patch-1
+  * Merge pull request #608 from Gu1/master
+  * Merge remote-tracking branch 'origin/pr/538'
+
+=== 2.9.2 / 2014-10-25
+
+* 8 bug fixes:
+  * Fix puma-wild handling a restart properly. Fixes #550
+  * JRuby SSL POODLE update
+  * Keep deprecated features warnings
+  * Log the current time when Puma shuts down.
+  * Fix cross-platform extension library detection
+  * Use the correct Windows names for OpenSSL.
+  * Better error logging during startup
+  * Fixing sexist error messages
+
+* 6 PRs merged:
+  * Merge pull request #549 from bsnape/log-shutdown-time
+  * Merge pull request #553 from lowjoel/master
+  * Merge pull request #568 from mariuz/patch-1
+  * Merge pull request #578 from danielbuechele/patch-1
+  * Merge pull request #581 from alexch/slightly-better-logging
+  * Merge pull request #590 from looker/jruby_disable_sslv3
+
+=== 2.9.1 / 2014-09-05
+
+* 4 bug fixes:
+  * Cleanup the SSL related structures properly, fixes memory leak
+  * Fix thread spawning edge case.
+  * Force a worker check after a worker boots, don't wait 5sec. Fixes #574
+  * Implement SIGHUP for logs reopening
+
+* 2 PRs merged:
+  * Merge pull request #561 from theoldreader/sighup
+  * Merge pull request #570 from havenwood/spawn-thread-edge-case
+
+=== 2.9.0 / 2014-07-12
+
+* 1 minor feature:
+  * Add SSL support for JRuby
+
+* 3 bug fixes:
+  * Typo BUNDLER_GEMFILE -> BUNDLE_GEMFILE
+  * Use fast_write because we can't trust syswrite
+  * pumactl - do not modify original ARGV
+
+* 4 doc fixes:
+  * BSD-3-Clause over BSD to avoid confusion
+  * Deploy doc: clarification of the GIL
+  * Fix typo in DEPLOYMENT.md
+  * Update README.md
+
+* 6 PRs merged:
+  * Merge pull request #520 from misfo/patch-2
+  * Merge pull request #530 from looker/jruby-ssl
+  * Merge pull request #537 from vlmonk/patch-1
+  * Merge pull request #540 from allaire/patch-1
+  * Merge pull request #544 from chulkilee/bsd-3-clause
+  * Merge pull request #551 from jcxplorer/patch-1
+
+=== 2.8.2 / 2014-04-12
+
+* 4 bug fixes:
+  * During upgrade, change directory in main process instead of workers.
+  * Close the client properly on error
+  * Capistrano: fallback from phased restart to start when not started
+  * Allow tag option in conf file
+
+* 4 doc fixes:
+  * Fix Puma daemon service README typo
+  * `preload_app!` instead of `preload_app`
+  * add preload_app and prune_bundler to example config
+  * allow changing of worker_timeout in config file
+
+* 11 PRs merged:
+  * Merge pull request #487 from ckuttruff/master
+  * Merge pull request #492 from ckuttruff/master
+  * Merge pull request #493 from alepore/config_tag
+  * Merge pull request #503 from mariuz/patch-1
+  * Merge pull request #505 from sammcj/patch-1
+  * Merge pull request #506 from FlavourSys/config_worker_timeout
+  * Merge pull request #510 from momer/rescue-block-handle-servers-fix
+  * Merge pull request #511 from macool/patch-1
+  * Merge pull request #514 from edogawaconan/refactor_env
+  * Merge pull request #517 from misfo/patch-1
+  * Merge pull request #518 from LongMan/master
+
 === 2.8.1 / 2014-03-06
 
 * 1 bug fixes:
@@ -286,7 +582,7 @@ RailsConf 2013 edition!
   * Close the binder in the right place. Fixes #192
   * Handle early term in workers. Fixes #206
   * Make sure that the default port is 80 when the request doesn't include HTTP_X_FORWARDED_PROTO.
-  * Prevent Errno::EBADF errors on restart when running ruby 2.0 
+  * Prevent Errno::EBADF errors on restart when running ruby 2.0
   * Record the proper @master_pid
   * Respect the header HTTP_X_FORWARDED_PROTO when the host doesn't include a port number.
   * Retry EAGAIN/EWOULDBLOCK during syswrite

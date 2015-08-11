@@ -4,6 +4,7 @@ module Puma
       def initialize(socket, engine)
         @socket = socket
         @engine = engine
+        @peercert = nil
       end
 
       def to_io
@@ -86,6 +87,21 @@ module Puma
       def peeraddr
         @socket.peeraddr
       end
+
+      def peercert
+        return @peercert if @peercert
+
+        raw = @engine.peercert
+        return nil unless raw
+
+        @peercert = OpenSSL::X509::Certificate.new raw
+      end
+    end
+
+    if defined?(JRUBY_VERSION)
+      class SSLError < StandardError
+        # Define this for jruby even though it isn't used.
+      end
     end
 
     class Context
@@ -95,11 +111,6 @@ module Puma
         # jruby-specific Context properties: java uses a keystore and password pair rather than a cert/key pair
         attr_reader :keystore
         attr_accessor :keystore_pass
-        attr_accessor :enable_SSLv3
-
-        def initialize
-          @enable_SSLv3 = false
-        end
 
         def keystore=(keystore)
           raise ArgumentError, "No such keystore file '#{keystore}'" unless File.exist? keystore
@@ -109,6 +120,7 @@ module Puma
         # non-jruby Context properties
         attr_reader :key
         attr_reader :cert
+        attr_reader :ca
 
         def key=(key)
           raise ArgumentError, "No such key file '#{key}'" unless File.exist? key
@@ -119,11 +131,17 @@ module Puma
           raise ArgumentError, "No such cert file '#{cert}'" unless File.exist? cert
           @cert = cert
         end
+
+        def ca=(ca)
+          raise ArgumentError, "No such ca file '#{ca}'" unless File.exist? ca
+          @ca = ca
+        end
       end
     end
 
     VERIFY_NONE = 0
     VERIFY_PEER = 1
+    VERIFY_FAIL_IF_NO_PEER_CERT = 2
 
     class Server
       def initialize(socket, ctx)

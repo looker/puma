@@ -8,12 +8,24 @@ module Puma
   # The methods available are the events that the Server fires.
   #
   class Events
+    class DefaultFormatter
+      def call(str)
+        str
+      end
+    end
+
+    class PidFormatter
+      def call(str)
+        "[#{$$}] #{str}"
+      end
+    end
 
     include Const
 
     # Create an Events object that prints to +stdout+ and +stderr+.
     #
     def initialize(stdout, stderr)
+      @formatter = DefaultFormatter.new
       @stdout = stdout
       @stderr = stderr
 
@@ -28,6 +40,7 @@ module Puma
     end
 
     attr_reader :stdout, :stderr
+    attr_accessor :formatter
 
     # Fire callbacks for the named hook
     #
@@ -52,11 +65,11 @@ module Puma
     # Write +str+ to +@stdout+
     #
     def log(str)
-      @stdout.puts str
+      @stdout.puts format(str)
     end
 
     def write(str)
-      @stdout.write str
+      @stdout.write format(str)
     end
 
     def debug(str)
@@ -66,11 +79,15 @@ module Puma
     # Write +str+ to +@stderr+
     #
     def error(str)
-      @stderr.puts "ERROR: #{str}"
+      @stderr.puts format("ERROR: #{str}")
       exit 1
     end
 
-    # An HTTP parse error has occured.
+    def format(str)
+      formatter.call(str)
+    end
+
+    # An HTTP parse error has occurred.
     # +server+ is the Server object, +env+ the request, and +error+ a
     # parsing exception.
     #
@@ -79,7 +96,16 @@ module Puma
       @stderr.puts "#{Time.now}: ENV: #{env.inspect}\n---\n"
     end
 
-    # An unknown error has occured.
+    # An SSL error has occurred.
+    # +server+ is the Server object, +peeraddr+ peer address, +peercert+
+    # any peer certificate (if present), and +error+ an exception object.
+    #
+    def ssl_error(server, peeraddr, peercert, error)
+      subject = peercert ? peercert.subject : nil
+      @stderr.puts "#{Time.now}: SSL error, peer: #{peeraddr}, peer cert: #{subject}, #{error.inspect}"
+    end
+
+    # An unknown error has occurred.
     # +server+ is the Server object, +env+ the request, +error+ an exception
     # object, and +kind+ some additional info.
     #
@@ -111,20 +137,6 @@ module Puma
 
     def self.stdio
       Events.new $stdout, $stderr
-    end
-  end
-
-  class PidEvents < Events
-    def log(str)
-      super "[#{$$}] #{str}"
-    end
-
-    def write(str)
-      super "[#{$$}] #{str}"
-    end
-
-    def error(str)
-      super "[#{$$}] #{str}"
     end
   end
 end

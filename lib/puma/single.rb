@@ -70,12 +70,13 @@ module Puma
           sleep
         end
       else
-        load_and_bind
-
         if daemon?
           log "* Daemonizing..."
           Process.daemon(true)
+          redirect_io
         end
+
+        load_and_bind
       end
 
       @cli.write_state
@@ -84,11 +85,10 @@ module Puma
 
       @server = server = start_server
 
-      unless @options[:daemon]
+      unless daemon?
         log "Use Ctrl-C to stop"
+        redirect_io
       end
-
-      redirect_io
 
       @cli.events.fire_on_booted!
 

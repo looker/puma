@@ -42,7 +42,7 @@ Here are some rules of thumb:
 
 **How do you know if you're got enough (or too many workers)?**
 
-A good question. Due to MRI's GIL, only one thread can be executing at a time.
+A good question. Due to MRI's GIL, only one thread can be executing Ruby code at a time.
 But since so many apps are waiting on IO from DBs, etc., they can utilize threads
 to make better use of the process.
 
@@ -56,7 +56,7 @@ you've got capacity still but aren't starving threads.
 
 ## Daemonizing
 
-I prefer to not daemonize my servers and use something like `runit` or `upstrart` to
+I prefer to not daemonize my servers and use something like `runit` or `upstart` to
 monitor them as child processes. This gives them fast response to crashes and
 makes it easy to figure out what is going on. Additionally, unlike `unicorn`,
 puma does not require daemonization to do zero-downtime restarts.
@@ -76,8 +76,7 @@ puma to start running that new code. Minimizing the amount of time the server
 is unavailable would be nice as well. Here's how to do it:
 
 1. Don't use `preload!`. This dirties the master process and means it will have
-to shutdown all the workers and re-exec itself to get your new code, which means
-much higher waiting around for things to load.
+to shutdown all the workers and re-exec itself to get your new code. It is not compatible with phased-restart and `prune_bundler` as well.
 
 1. Use `prune_bundler`. This makes it so that the cluster master will detach itself
 from a Bundler context on start. This allows the cluster workers to load your app

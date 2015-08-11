@@ -12,7 +12,8 @@ module Puma
     # thread.
     #
     def initialize(min, max, *extra, &block)
-      @cond = ConditionVariable.new
+      @not_empty = ConditionVariable.new
+      @not_full = ConditionVariable.new
       @mutex = Mutex.new
 
       @todo = []
@@ -32,13 +33,17 @@ module Puma
       @workers = []
 
       @auto_trim = nil
+      @reaper = nil
 
       @mutex.synchronize do
         @min.times { spawn_thread }
       end
+
+      @clean_thread_locals = false
     end
 
     attr_reader :spawned, :trim_requested
+    attr_accessor :clean_thread_locals
 
     # How many objects have yet to be processed by the pool?
     #
@@ -57,7 +62,8 @@ module Puma
         todo  = @todo
         block = @block
         mutex = @mutex
-        cond  = @cond
+        not_empty = @not_empty
+        not_full = @not_full
 
         extra = @extra.map { |i| i.new }
 
@@ -80,7 +86,8 @@ module Puma
               end
 
               @waiting += 1
-              cond.wait mutex
+              not_full.signal
+              not_empty.wait mutex
               @waiting -= 1
             end
 
@@ -89,7 +96,16 @@ module Puma
 
           break unless continue
 
-          block.call(work, *extra)
+          if @clean_thread_locals
+            Thread.current.keys.each do |key|
+              Thread.current[key] = nil unless key == :__recursive_key__
+            end
+          end
+
+          begin
+            block.call(work, *extra)
+          rescue Exception
+          end
         end
 
         mutex.synchronize do
@@ -114,11 +130,19 @@ module Puma
 
         @todo << work
 
-        if @waiting == 0 and @spawned < @max
+        if @waiting < @todo.size and @spawned < @max
           spawn_thread
         end
 
-        @cond.signal
+        @not_empty.signal
+      end
+    end
+
+    def wait_until_not_full
+      @mutex.synchronize do
+        until @todo.size - @waiting < @max - @spawned or @shutdown
+          @not_full.wait @mutex
+        end
       end
     end
 
@@ -130,8 +154,23 @@ module Puma
       @mutex.synchronize do
         if (force or @waiting > 0) and @spawned - @trim_requested > @min
           @trim_requested += 1
-          @cond.signal
+          @not_empty.signal
         end
+      end
+    end
+
+    # If there are dead threads in the pool make them go away while decreasing
+    # spwaned counter so that new healty threads could be created again.
+    def reap
+      @mutex.synchronize do
+        dead_workers = @workers.reject(&:alive?)
+
+        dead_workers.each do |worker|
+          worker.kill
+          @spawned -= 1
+        end
+
+        @workers -= dead_workers
       end
     end
 
@@ -164,19 +203,52 @@ module Puma
       @auto_trim.start!
     end
 
+    class Reaper
+      def initialize(pool, timeout)
+        @pool = pool
+        @timeout = timeout
+        @running = false
+      end
+
+      def start!
+        @running = true
+
+        @thread = Thread.new do
+          while @running
+            @pool.reap
+            sleep @timeout
+          end
+        end
+      end
+
+      def stop
+        @running = false
+        @thread.wakeup
+      end
+    end
+
+    def auto_reap!(timeout=5)
+      @reaper = Reaper.new(self, timeout)
+      @reaper.start!
+    end
+
     # Tell all threads in the pool to exit and wait for them to finish.
     #
     def shutdown
       @mutex.synchronize do
         @shutdown = true
-        @cond.broadcast
+        @not_empty.broadcast
+        @not_full.broadcast
 
         @auto_trim.stop if @auto_trim
+        @reaper.stop if @reaper
       end
 
       # Use this instead of #each so that we don't stop in the middle
       # of each and see a mutated object mid #each
-      @workers.first.join until @workers.empty?
+      if !@workers.empty?
+          @workers.first.join until @workers.empty?
+      end
 
       @spawned = 0
       @workers = []

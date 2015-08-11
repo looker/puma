@@ -4,6 +4,8 @@ module Puma
   class Binder
     include Puma::Const
 
+    RACK_VERSION = [1,3].freeze
+
     def initialize(events)
       @events = events
       @listeners = []
@@ -11,17 +13,17 @@ module Puma
       @unix_paths = []
 
       @proto_env = {
-        "rack.version".freeze => Rack::VERSION,
+        "rack.version".freeze => RACK_VERSION,
         "rack.errors".freeze => events.stderr,
         "rack.multithread".freeze => true,
         "rack.multiprocess".freeze => false,
         "rack.run_once".freeze => false,
         "SCRIPT_NAME".freeze => ENV['SCRIPT_NAME'] || "",
 
-        # Rack blows up if this is an empty string, and Rack::Lint
-        # blows up if it's nil. So 'text/plain' seems like the most
-        # sensible default value.
-        "CONTENT_TYPE".freeze => "text/plain",
+        # I'd like to set a default CONTENT_TYPE here but some things
+        # depend on their not being a default set and infering
+        # it from the content. And so if i set it here, it won't
+        # infer properly.
 
         "QUERY_STRING".freeze => "",
         SERVER_PROTOCOL => HTTP_11,
@@ -87,7 +89,7 @@ module Puma
             logger.log "* Inherited #{str}"
             io = inherit_tcp_listener uri.host, uri.port, fd
           else
-            params = Rack::Utils.parse_query uri.query
+            params = Util.parse_query uri.query
 
             opt = params.key?('low_latency')
             bak = params.fetch('backlog', 1024).to_i
@@ -98,7 +100,7 @@ module Puma
 
           @listeners << [str, io]
         when "unix"
-          path = "#{uri.host}#{uri.path}"
+          path = "#{uri.host}#{uri.path}".gsub("%20", " ")
 
           if fd = @inherited_fds.delete(str)
             logger.log "* Inherited #{str}"
@@ -107,21 +109,26 @@ module Puma
             logger.log "* Listening on #{str}"
 
             umask = nil
+            mode = nil
 
             if uri.query
-              params = Rack::Utils.parse_query uri.query
+              params = Util.parse_query uri.query
               if u = params['umask']
                 # Use Integer() to respect the 0 prefix as octal
                 umask = Integer(u)
               end
+
+              if u = params['mode']
+                mode = Integer('0'+u)
+              end
             end
 
-            io = add_unix_listener path, umask
+            io = add_unix_listener path, umask, mode
           end
 
           @listeners << [str, io]
         when "ssl"
-          params = Rack::Utils.parse_query uri.query
+          params = Util.parse_query uri.query
           require 'puma/minissl'
 
           ctx = MiniSSL::Context.new
@@ -150,9 +157,28 @@ module Puma
             end
 
             ctx.cert = params['cert']
-          end
 
-          ctx.verify_mode = MiniSSL::VERIFY_NONE
+            if ['peer', 'force_peer'].include?(params['verify_mode'])
+              unless params['ca']
+                @events.error "Please specify the SSL ca via 'ca='"
+              end
+              ctx.ca = params['ca']
+            end
+
+            if  params['verify_mode']
+              ctx.verify_mode = case params['verify_mode']
+                                when "peer"
+                                  MiniSSL::VERIFY_PEER
+                                when "force_peer"
+                                  MiniSSL::VERIFY_PEER | MiniSSL::VERIFY_FAIL_IF_NO_PEER_CERT
+                                when "none"
+                                  MiniSSL::VERIFY_NONE
+                                else
+                                  @events.error "Please specify a valid verify_mode="
+                                  MiniSSL::VERIFY_NONE
+                                end
+            end
+          end
 
           if fd = @inherited_fds.delete(str)
             logger.log "* Inherited #{str}"
@@ -227,6 +253,7 @@ module Puma
                          optimize_for_latency=true, backlog=1024)
       require 'puma/minissl'
 
+      host = host[1..-2] if host[0..0] == '['
       s = TCPServer.new(host, port)
       if optimize_for_latency
         s.setsockopt(Socket::IPPROTO_TCP, Socket::TCP_NODELAY, 1)
@@ -246,13 +273,20 @@ module Puma
     def inherited_ssl_listener(fd, ctx)
       require 'puma/minissl'
       s = TCPServer.for_fd(fd)
-      @ios << MiniSSL::Server.new(s, ctx)
+      ssl = MiniSSL::Server.new(s, ctx)
+
+      env = @proto_env.dup
+      env[HTTPS_KEY] = HTTPS
+      @envs[ssl] = env
+
+      @ios << ssl
+
       s
     end
 
     # Tell the server to listen on +path+ as a UNIX domain socket.
     #
-    def add_unix_listener(path, umask=nil)
+    def add_unix_listener(path, umask=nil, mode=nil)
       @unix_paths << path
 
       # Let anyone connect by default
@@ -278,6 +312,14 @@ module Puma
         File.umask old_mask
       end
 
+      if mode
+        File.chmod mode, path
+      end
+
+      env = @proto_env.dup
+      env[REMOTE_ADDR] = "127.0.0.1"
+      @envs[s] = env
+
       s
     end
 
@@ -290,6 +332,10 @@ module Puma
         s = UNIXServer.for_fd fd
       end
       @ios << s
+
+      env = @proto_env.dup
+      env[REMOTE_ADDR] = "127.0.0.1"
+      @envs[s] = env
 
       s
     end
