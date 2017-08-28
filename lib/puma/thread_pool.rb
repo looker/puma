@@ -168,17 +168,15 @@ module Puma
         dead_workers.each do |worker|
           worker.kill
           @spawned -= 1
+
+          # if there's work waiting for a usable thread, replace the worker thread we just killed
+          # with a new one to guarantee there's a usable thread for that work
+          if @waiting < @todo.size and @spawned < @max
+            spawn_thread
+          end
         end
 
         @workers -= dead_workers
-
-        (@todo.size - @spawned).times do
-          if @waiting < @todo.size and @spawned < @max
-            spawn_thread
-          else
-            break
-          end
-        end
 
         @not_empty.signal
       end
