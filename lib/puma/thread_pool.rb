@@ -171,6 +171,16 @@ module Puma
         end
 
         @workers -= dead_workers
+
+        (@todo.size - @spawned).times do
+          if @waiting < @todo.size and @spawned < @max
+            spawn_thread
+          else
+            break
+          end
+        end
+
+        @not_empty.signal
       end
     end
 
