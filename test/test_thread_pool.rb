@@ -262,3 +262,4 @@ class TestThreadPool < Test::Unit::TestCase
     assert_equal 0, pool.backlog
   end
 end
+
