@@ -87,8 +87,11 @@ module Puma
 
               @waiting += 1
               not_full.signal
-              not_empty.wait mutex
-              @waiting -= 1
+              begin
+                not_empty.wait mutex
+              ensure
+                @waiting -= 1
+              end
             end
 
             work = todo.shift if continue
@@ -168,9 +171,16 @@ module Puma
         dead_workers.each do |worker|
           worker.kill
           @spawned -= 1
+          # if there's work waiting for a usable thread and we now have available slots in our
+          # pool, spawn a thread to process that outstanding work
+          if @waiting < @todo.size and @spawned < @max
+            spawn_thread
+          end
         end
 
         @workers -= dead_workers
+
+        @not_empty.signal
       end
     end
 
