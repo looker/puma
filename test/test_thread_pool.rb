@@ -262,4 +262,24 @@ class TestThreadPool < Minitest::Test
       assert rescued
     end
   end
+
+  def test_correct_waiting_count_for_killed_threads
+    pool = new_pool(1, 1) { |_| }
+
+    pause
+
+    # simulate our waiting worker thread getting killed for whatever reason
+    pool.instance_eval { @workers[0].kill }
+
+    pause
+
+    pool.reap
+
+    pause
+
+    pool << 0
+
+    pause
+    assert_equal 0, pool.backlog
+  end
 end

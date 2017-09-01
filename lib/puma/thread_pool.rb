@@ -117,8 +117,11 @@ module Puma
 
               @waiting += 1
               not_full.signal
-              not_empty.wait mutex
-              @waiting -= 1
+              begin
+                not_empty.wait mutex
+              ensure
+                @waiting -= 1
+              end
             end
 
             work = todo.shift if continue
