@@ -191,11 +191,19 @@ module Puma
         dead_workers.each do |worker|
           worker.kill
           @spawned -= 1
+
+          # if there's work waiting for a usable thread and we now have available slots in our
+          # pool, spawn a thread to process that outstanding work
+          if @waiting < @todo.size and @spawned < @max
+            spawn_thread
+          end
         end
 
         @workers.delete_if do |w|
           dead_workers.include?(w)
         end
+
+        @not_empty.signal
       end
     end
 

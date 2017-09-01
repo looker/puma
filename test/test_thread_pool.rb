@@ -247,4 +247,18 @@ class TestThreadPool < Minitest::Test
 
     assert_equal 0, pool.spawned
   end
+
+  def test_reap_processes_remaining_work
+    pool = new_pool(0,1) { |work| work == 0 ? Thread.current.kill : nil }
+
+    2.times { |i| pool << i }
+
+    pause
+
+    pool.reap
+
+    pause
+
+    assert_equal 0, pool.backlog
+  end
 end
