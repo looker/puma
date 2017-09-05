@@ -264,6 +264,8 @@ public class MiniSSL extends RubyObject {
             if (res.getStatus() == Status.BUFFER_UNDERFLOW) {
               // need more data before we can shake more hands
               done = true;
+            } else if (res.getStatus() == Status.CLOSED) {
+              throw new SSLException("Detected socket CLOSED during NEED_UNWRAP");
             }
             break;
           default:
