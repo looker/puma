@@ -345,4 +345,27 @@ public class MiniSSL extends RubyObject {
       return getRuntime().getNil();
     }
   }
+
+  @JRubyMethod(name = "init?")
+  public IRubyObject sslInitializing() {
+    Boolean isHandshaking = engine.getHandshakeStatus() != HandshakeStatus.NOT_HANDSHAKING;
+
+    return isHandshaking ? getRuntime().getTrue() : getRuntime().getFalse();
+  }
+
+  @JRubyMethod(name = "shutdown")
+  public IRubyObject sslShutdown() {
+    engine.closeOutbound();
+
+    try {
+      engine.closeInbound();
+    } catch(SSLException e) {
+      // thrown if this engine has not received the proper SSL/TLS close notification message from the peer.
+      // ignore this here as we only care if it returns successfully.
+    }
+
+    Boolean allClosed = engine.isInboundDone() && engine.isOutboundDone();
+
+    return allClosed ? getRuntime().getTrue() : getRuntime().getFalse();
+  }
 }
