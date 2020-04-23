@@ -5,6 +5,7 @@ require "puma/configuration"
 class TestLauncher < Minitest::Test
   def test_dependencies_and_files_to_require_after_prune_is_correctly_built_for_no_extra_deps
     skip_on :no_bundler
+    skip_on :jruby, suffix: " - customizing puma.gemspec to disable the C native extension invalidates this test"
 
     deps, dirs = launcher.send(:dependencies_and_files_to_require_after_prune)
 
@@ -17,6 +18,7 @@ class TestLauncher < Minitest::Test
   end
 
   def test_dependencies_and_files_to_require_after_prune_is_correctly_built_with_extra_deps
+    skip_on :jruby, suffix: " - customizing puma.gemspec to disable the C native extension invalidates this test"
     skip_on :no_bundler
     conf = Puma::Configuration.new do |c|
       c.extra_runtime_dependencies ['rdoc']

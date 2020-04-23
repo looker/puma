@@ -149,6 +149,7 @@ class TestPumaControlCli < TestConfigFileBase
   end
 
   def test_control_ssl
+    skip_on :jruby # ported from https://github.com/puma/puma/blob/4ef001000e71f987ccfacd28c3cbda614d3717ff/test/test_pumactl.rb#L144
     host = "127.0.0.1"
     port = find_open_port
     url = "ssl://#{host}:#{port}?#{ssl_query}"
