@@ -66,6 +66,7 @@ class TestCLI < Minitest::Test
   end
 
   def test_control_for_ssl
+    skip_on :jruby # backported from https://github.com/puma/puma/blob/b0b17f6ffd6a3fc858202a2b0ac1385f45603b18/test/test_cli.rb#L67
     app_port = UniquePort.call
     control_port = UniquePort.call
     control_host = "127.0.0.1"
@@ -97,8 +98,8 @@ class TestCLI < Minitest::Test
     assert_match(expected_stats, Puma.stats)
 
   ensure
-    cli.launcher.stop
-    t.join
+    cli.launcher.stop if cli
+    t.join if t
   end
 
   def test_control_clustered
