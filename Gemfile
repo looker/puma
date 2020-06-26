@@ -3,7 +3,8 @@ source "https://rubygems.org"
 gemspec
 
 gem "rdoc"
-gem "rake-compiler"
+# have to use a version of rake-compiler which uses java v1.5 target
+gem "rake-compiler", "1.0.4"
 
 gem "nio4r", "~> 2.0"
 gem "rack", "< 3.0"
