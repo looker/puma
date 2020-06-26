@@ -154,7 +154,7 @@ public class MiniSSL extends RubyObject {
     }
     is = new FileInputStream(keystoreFile);
     try {
-      ts.load(new FileInputStream(keystoreFile), password);
+      ts.load(is, password);
     } finally {
       is.close();
     }
