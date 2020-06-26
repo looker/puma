@@ -22,6 +22,7 @@ import javax.net.ssl.SSLException;
 import javax.net.ssl.SSLPeerUnverifiedException;
 import javax.net.ssl.SSLSession;
 import java.io.FileInputStream;
+import java.io.InputStream;
 import java.io.IOException;
 import java.nio.Buffer;
 import java.nio.ByteBuffer;
@@ -145,8 +146,18 @@ public class MiniSSL extends RubyObject {
 
     char[] password = miniSSLContext.callMethod(threadContext, "keystore_pass").convertToString().asJavaString().toCharArray();
     String keystoreFile = miniSSLContext.callMethod(threadContext, "keystore").convertToString().asJavaString();
-    ks.load(new FileInputStream(keystoreFile), password);
-    ts.load(new FileInputStream(keystoreFile), password);
+    InputStream is = new FileInputStream(keystoreFile);
+    try {
+      ks.load(is, password);
+    } finally {
+      is.close();
+    }
+    is = new FileInputStream(keystoreFile);
+    try {
+      ts.load(new FileInputStream(keystoreFile), password);
+    } finally {
+      is.close();
+    }
 
     KeyManagerFactory kmf = KeyManagerFactory.getInstance("SunX509");
     kmf.init(ks, password);
