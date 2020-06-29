@@ -19,6 +19,7 @@ import javax.net.ssl.SSLEngineResult;
 import javax.net.ssl.SSLException;
 import javax.net.ssl.SSLSession;
 import java.io.FileInputStream;
+import java.io.InputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.security.KeyManagementException;
@@ -138,8 +139,12 @@ public class MiniSSL extends RubyObject {
     KeyStore ks = KeyStore.getInstance(KeyStore.getDefaultType());
 
     char[] password = miniSSLContext.callMethod(threadContext, "keystore_pass").convertToString().asJavaString().toCharArray();
-    ks.load(new FileInputStream(miniSSLContext.callMethod(threadContext, "keystore").convertToString().asJavaString()),
-        password);
+    InputStream is = new FileInputStream(miniSSLContext.callMethod(threadContext, "keystore").convertToString().asJavaString());
+    try {
+      ks.load(is, password);
+    } finally {
+      is.close();
+    }
 
     KeyManagerFactory kmf = KeyManagerFactory.getInstance("SunX509");
     kmf.init(ks, password);
